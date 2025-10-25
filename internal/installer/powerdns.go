@@ -10,9 +10,10 @@ import (
 
 // SetupPowerDNS configures PowerDNS server
 func (i *Installer) SetupPowerDNS() error {
-	// Disable systemd-resolved to free port 53
-	if err := i.disableSystemdResolved(); err != nil {
-		return fmt.Errorf("failed to disable systemd-resolved: %w", err)
+	// Open firewall ports for DNS
+	if err := i.openDNSPorts(); err != nil {
+		fmt.Printf("⚠️  Warning: failed to open DNS ports in firewall: %v\n", err)
+		fmt.Println("   You may need to open ports 53/tcp and 53/udp manually")
 	}
 
 	// Test PostgreSQL connection first
@@ -179,9 +180,9 @@ func (i *Installer) ConfigureDNSRecords() error {
 	err = db.QueryRow("SELECT id FROM domains WHERE name = $1", i.config.PrimaryDomain).Scan(&domainID)
 
 	if err == sql.ErrNoRows {
-		// Create domain
+		// Create domain with MASTER type (required for PowerDNS to be authoritative)
 		err = db.QueryRow(
-			"INSERT INTO domains (name, type) VALUES ($1, 'NATIVE') RETURNING id",
+			"INSERT INTO domains (name, type) VALUES ($1, 'MASTER') RETURNING id",
 			i.config.PrimaryDomain,
 		).Scan(&domainID)
 
@@ -190,6 +191,12 @@ func (i *Installer) ConfigureDNSRecords() error {
 		}
 	} else if err != nil {
 		return fmt.Errorf("failed to check domain: %w", err)
+	}
+
+	// Update existing domains to MASTER type if they are NATIVE
+	_, err = db.Exec("UPDATE domains SET type = 'MASTER' WHERE name = $1 AND type = 'NATIVE'", i.config.PrimaryDomain)
+	if err != nil {
+		return fmt.Errorf("failed to update domain type: %w", err)
 	}
 
 	// Delete existing records for this domain (for idempotency)
@@ -302,33 +309,6 @@ func extractDKIMPublicKey(content string) string {
 	return content[start:end]
 }
 
-// disableSystemdResolved disables systemd-resolved to free port 53
-func (i *Installer) disableSystemdResolved() error {
-	fmt.Println("  Disabling systemd-resolved to free port 53...")
-
-	// Stop systemd-resolved
-	cmd := exec.Command("systemctl", "stop", "systemd-resolved")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to stop systemd-resolved: %w", err)
-	}
-
-	// Disable systemd-resolved
-	cmd = exec.Command("systemctl", "disable", "systemd-resolved")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to disable systemd-resolved: %w", err)
-	}
-
-	// Remove the symlink if it exists
-	if _, err := os.Lstat("/etc/resolv.conf"); err == nil {
-		if err := os.Remove("/etc/resolv.conf"); err != nil {
-			return fmt.Errorf("failed to remove /etc/resolv.conf: %w", err)
-		}
-	}
-
-	fmt.Println("  ✓ systemd-resolved disabled")
-	return nil
-}
-
 // configureResolvConf configures /etc/resolv.conf to use PowerDNS and fallback DNS
 func (i *Installer) configureResolvConf() error {
 	fmt.Println("  Configuring DNS resolution...")
@@ -389,4 +369,17 @@ func (i *Installer) ensureDomainInHibana() error {
 	// Domain already exists
 	fmt.Println("  ✓ Domain already exists in database")
 	return nil
+}
+
+// openDNSPorts opens firewall ports for DNS (53/tcp and 53/udp)
+func (i *Installer) openDNSPorts() error {
+	fmt.Println("  Opening firewall ports for DNS (53/tcp, 53/udp)...")
+
+	ports := []string{"53/tcp", "53/udp"}
+	portDescriptions := map[string]string{
+		"53/tcp": "DNS TCP",
+		"53/udp": "DNS UDP",
+	}
+
+	return i.openPortsWithTracking("dns_setup", ports, portDescriptions)
 }

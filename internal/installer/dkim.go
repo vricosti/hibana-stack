@@ -94,18 +94,19 @@ SubDomains              no
 
 AutoRestart             yes
 AutoRestartRate         10/1M
-Background              yes
 DNSTimeout              5
 SignatureAlgorithm      rsa-sha256
 
 UserID                  opendkim:opendkim
 UMask                   007
 
-Socket                  inet:8891@localhost
+Socket                  local:/run/opendkim/opendkim.sock
+PidFile                 /run/opendkim/opendkim.pid
 
 KeyTable                /etc/opendkim/key.table
 SigningTable            /etc/opendkim/signing.table
-TrustedHosts            /etc/opendkim/trusted.hosts
+ExternalIgnoreList      /etc/opendkim/trusted.hosts
+InternalHosts           /etc/opendkim/trusted.hosts
 `
 
 	if err := os.WriteFile("/etc/opendkim.conf", []byte(opendkimConf), 0644); err != nil {
@@ -146,13 +147,42 @@ localhost
 
 // restartOpenDKIM restarts the OpenDKIM service
 func (i *Installer) restartOpenDKIM() error {
-	cmd := exec.Command("systemctl", "restart", "opendkim")
-	if err := cmd.Run(); err != nil {
-		return err
+	// Create runtime directory
+	runDir := "/run/opendkim"
+	if err := os.MkdirAll(runDir, 0750); err != nil {
+		return fmt.Errorf("failed to create %s: %w", runDir, err)
 	}
 
+	// Set ownership
+	if err := exec.Command("chown", "opendkim:opendkim", runDir).Run(); err != nil {
+		return fmt.Errorf("failed to set ownership on %s: %w", runDir, err)
+	}
+
+	// Add postfix user to opendkim group so it can access the socket
+	if err := exec.Command("usermod", "-a", "-G", "opendkim", "postfix").Run(); err != nil {
+		fmt.Println("  ⚠️  Warning: Could not add postfix to opendkim group")
+	}
+
+	// Restart service
+	cmd := exec.Command("systemctl", "restart", "opendkim")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to restart opendkim: %w\nOutput: %s", err, string(output))
+	}
+
+	// Enable service
 	cmd = exec.Command("systemctl", "enable", "opendkim")
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to enable opendkim: %w", err)
+	}
+
+	// Verify service is running
+	cmd = exec.Command("systemctl", "is-active", "opendkim")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("opendkim service is not active after restart")
+	}
+
+	return nil
 }
 
 // storeDKIMKeys stores DKIM keys in the Hibana database

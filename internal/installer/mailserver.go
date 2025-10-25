@@ -14,6 +14,12 @@ import (
 
 // SetupMailServer configures Postfix and Dovecot
 func (i *Installer) SetupMailServer() error {
+	// Open firewall ports for mail services
+	if err := i.openMailPorts(); err != nil {
+		fmt.Printf("⚠️  Warning: failed to open mail ports in firewall: %v\n", err)
+		fmt.Println("   You may need to open ports manually: 25, 587, 465 (SMTP), 993 (IMAPS), 995 (POP3S)")
+	}
+
 	// Generate self-signed certificates first (will be replaced by Let's Encrypt later)
 	if err := i.generateSelfSignedCerts(); err != nil {
 		return fmt.Errorf("failed to generate self-signed certificates: %w", err)
@@ -118,8 +124,8 @@ smtpd_sender_restrictions =
 # DKIM
 milter_default_action = accept
 milter_protocol = 6
-smtpd_milters = inet:localhost:8891
-non_smtpd_milters = inet:localhost:8891
+smtpd_milters = local:/run/opendkim/opendkim.sock
+non_smtpd_milters = local:/run/opendkim/opendkim.sock
 
 # Other settings
 home_mailbox = Maildir/
@@ -444,4 +450,26 @@ func hashPasswordSHA512(password string) string {
 	// In production, use proper crypt() implementation
 	h := sha512.Sum512([]byte(password))
 	return "{SHA512-CRYPT}" + base64.StdEncoding.EncodeToString(h[:])
+}
+
+// openMailPorts opens firewall ports for mail services
+func (i *Installer) openMailPorts() error {
+	fmt.Println("  Opening firewall ports for mail services...")
+
+	// Open mail ports
+	// 25/tcp - SMTP (for receiving mail from other servers)
+	// 587/tcp - Submission (for sending mail from mail clients)
+	// 465/tcp - SMTPS (legacy secure SMTP)
+	// 993/tcp - IMAPS (secure IMAP)
+	// 995/tcp - POP3S (secure POP3)
+	ports := []string{"25/tcp", "587/tcp", "465/tcp", "993/tcp", "995/tcp"}
+	portDescriptions := map[string]string{
+		"25/tcp":  "SMTP - receiving mail from other servers",
+		"587/tcp": "Submission - sending mail from mail clients",
+		"465/tcp": "SMTPS - secure SMTP (legacy)",
+		"993/tcp": "IMAPS - secure IMAP",
+		"995/tcp": "POP3S - secure POP3",
+	}
+
+	return i.openPortsWithTracking("mail_setup", ports, portDescriptions)
 }

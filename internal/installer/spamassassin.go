@@ -299,16 +299,22 @@ if header :contains "X-Spam-Level" "**********" {
 
 // startSpamAssassin starts and enables SpamAssassin service
 func (i *Installer) startSpamAssassin() error {
-	// Start SpamAssassin daemon
-	cmd := exec.Command("systemctl", "start", "spamassassin")
+	// Start SpamAssassin daemon (service name is spamd, not spamassassin)
+	cmd := exec.Command("systemctl", "restart", "spamd")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to start spamassassin: %w", err)
+		return fmt.Errorf("failed to restart spamd: %w", err)
 	}
 
 	// Enable SpamAssassin
-	cmd = exec.Command("systemctl", "enable", "spamassassin")
+	cmd = exec.Command("systemctl", "enable", "spamd")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to enable spamassassin: %w", err)
+		return fmt.Errorf("failed to enable spamd: %w", err)
+	}
+
+	// Verify service is running
+	cmd = exec.Command("systemctl", "is-active", "spamd")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("spamd service is not active after restart")
 	}
 
 	return nil

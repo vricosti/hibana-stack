@@ -9,6 +9,12 @@ import (
 
 // SetupTraefik configures Traefik reverse proxy
 func (i *Installer) SetupTraefik() error {
+	// Open firewall ports for web services
+	if err := i.openWebPorts(); err != nil {
+		fmt.Printf("⚠️  Warning: failed to open web ports in firewall: %v\n", err)
+		fmt.Println("   You may need to open ports manually: 80 (HTTP), 443 (HTTPS)")
+	}
+
 	traefikDir := "/etc/hibana/traefik"
 
 	// Create Traefik directories
@@ -361,4 +367,20 @@ func (i *Installer) startDockerCompose(dir string) error {
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
+}
+
+// openWebPorts opens firewall ports for web services (HTTP/HTTPS)
+func (i *Installer) openWebPorts() error {
+	fmt.Println("  Opening firewall ports for web services...")
+
+	// Open web ports
+	// 80/tcp - HTTP (for Let's Encrypt challenges and HTTP to HTTPS redirect)
+	// 443/tcp - HTTPS (for secure web access)
+	ports := []string{"80/tcp", "443/tcp"}
+	portDescriptions := map[string]string{
+		"80/tcp":  "HTTP - Let's Encrypt challenges and redirects",
+		"443/tcp": "HTTPS - secure web access",
+	}
+
+	return i.openPortsWithTracking("web_setup", ports, portDescriptions)
 }

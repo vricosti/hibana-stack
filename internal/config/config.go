@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 )
 
 // Config represents the Hibana Stack configuration
@@ -92,7 +93,19 @@ func GenerateSkeleton() *Config {
 
 // GetDNSRecords generates DNS records for the configuration
 func (c *Config) GetDNSRecords(dkimPublicKey string) []DNSRecord {
+	// Get current timestamp for SOA serial (YYYYMMDDnn format)
+	serial := time.Now().Format("2006010215") // YYYYMMDDnn format
+
 	records := []DNSRecord{
+		// SOA record (required for PowerDNS to be authoritative)
+		{Type: "SOA", Name: "@", Content: fmt.Sprintf("ns1.%s. hostmaster.%s. %s 10800 3600 604800 3600", c.PrimaryDomain, c.PrimaryDomain, serial), TTL: 86400},
+
+		// NS record (nameserver)
+		{Type: "NS", Name: "@", Content: fmt.Sprintf("ns1.%s.", c.PrimaryDomain), TTL: 3600},
+
+		// A record for nameserver
+		{Type: "A", Name: "ns1", Content: c.ServerIP, TTL: 3600},
+
 		// A record for domain
 		{Type: "A", Name: "@", Content: c.ServerIP, TTL: 300},
 

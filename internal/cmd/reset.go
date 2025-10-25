@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"bufio"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vricosti/hibana-stack/internal/config"
+	"github.com/vricosti/hibana-stack/internal/installer"
 )
 
 var resetCmd = &cobra.Command{
@@ -74,15 +77,22 @@ func runReset(cmd *cobra.Command, args []string) error {
 	fmt.Println("🗑️  Starting cleanup process...")
 	fmt.Println()
 
-	// Stop services first
+	// IMPORTANT: Restore firewall BEFORE stopping PostgreSQL
+	fmt.Println("🔥 Restoring firewall to original state...")
+	if err := restoreFirewallFromDatabase(); err != nil {
+		fmt.Printf("  ⚠️  Warning: failed to restore firewall state: %v\n", err)
+		fmt.Println("  Continuing with cleanup...")
+	}
+	fmt.Println()
+
+	// Stop services (except PostgreSQL - we'll stop it last)
 	fmt.Println("⏹️  Stopping services...")
 	services := []string{
 		"postfix",
 		"dovecot",
 		"opendkim",
 		"pdns",
-		"postgresql",
-		"spamassassin",
+		"spamd",
 		"docker",
 	}
 
@@ -90,6 +100,10 @@ func runReset(cmd *cobra.Command, args []string) error {
 		cmd := exec.Command("systemctl", "stop", service)
 		_ = cmd.Run() // Ignore errors if service doesn't exist
 	}
+
+	// Wait a bit for processes to die
+	fmt.Println("   Waiting for services to terminate...")
+	exec.Command("sleep", "2").Run()
 
 	// Re-enable systemd-resolved
 	fmt.Println("\n🔄 Re-enabling systemd-resolved...")
@@ -103,16 +117,16 @@ func runReset(cmd *cobra.Command, args []string) error {
 	exec.Command("docker", "rm", "$(docker ps -aq)").Run()
 	exec.Command("docker", "rmi", "$(docker images -q)").Run()
 
-	// Purge packages
+	// Purge packages (except PostgreSQL - we'll remove it last)
 	fmt.Println("\n📦 Removing packages...")
 	packages := []string{
-		"postgresql*",
 		"pdns-server",
 		"pdns-backend-pgsql",
 		"postfix*",
 		"dovecot-core",
 		"dovecot-imapd",
 		"dovecot-pop3d",
+		"dovecot-lmtpd",
 		"dovecot-sieve",
 		"dovecot-managesieved",
 		"opendkim",
@@ -146,37 +160,68 @@ func runReset(cmd *cobra.Command, args []string) error {
 	fmt.Println("\n🗑️  Cleaning apt cache...")
 	exec.Command("apt-get", "clean").Run()
 
-	// Remove configuration directories
+	// Remove configuration directories (except PostgreSQL - we'll remove it last)
 	fmt.Println("\n📁 Removing configuration directories...")
 	dirsToRemove := []string{
 		"/etc/postfix",
 		"/etc/dovecot",
 		"/etc/opendkim",
 		"/etc/powerdns",
-		"/var/lib/postgresql",
+		"/etc/hibana",
 		"/var/spool/mail",
 		"/var/mail",
 		"/etc/traefik",
 		"/opt/traefik",
 		"/var/lib/docker",
 		"/etc/spamassassin",
+		"/run/opendkim",
 	}
 
 	for _, dir := range dirsToRemove {
 		if _, err := os.Stat(dir); err == nil {
 			fmt.Printf("  Removing %s...\n", dir)
-			if err := os.RemoveAll(dir); err != nil {
+			// Force removal with exec.Command for better permissions handling
+			cmd := exec.Command("rm", "-rf", dir)
+			if err := cmd.Run(); err != nil {
 				fmt.Printf("  ⚠️  Failed to remove %s: %v\n", dir, err)
 			}
 		}
 	}
 
+	// Remove SSL certificates
+	fmt.Println("\n🔐 Removing SSL certificates...")
+	exec.Command("rm", "-f", "/etc/ssl/certs/hibana-*.crt").Run()
+	exec.Command("rm", "-f", "/etc/ssl/private/hibana-*.key").Run()
+
 	// Remove mail users
 	fmt.Println("\n👤 Removing mail system users...")
-	usersToRemove := []string{"vmail", "opendkim"}
+	usersToRemove := []string{"vmail", "opendkim", "spamd"}
 	for _, user := range usersToRemove {
 		exec.Command("userdel", "-r", user).Run() // Ignore errors
 	}
+
+	// NOW we can stop and remove PostgreSQL (last step to preserve installation state)
+	fmt.Println("\n🗄️  Stopping and removing PostgreSQL (final step)...")
+	exec.Command("systemctl", "stop", "postgresql").Run()
+
+	// Kill any remaining PostgreSQL processes
+	fmt.Println("   Killing remaining PostgreSQL processes...")
+	exec.Command("pkill", "-9", "postgres").Run()
+	exec.Command("sleep", "2").Run()
+
+	// Purge PostgreSQL
+	fmt.Println("   Purging PostgreSQL packages...")
+	pgPurgeCmd := exec.Command("apt-get", "purge", "-y", "postgresql*")
+	pgPurgeCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	pgPurgeCmd.Stdout = os.Stdout
+	pgPurgeCmd.Stderr = os.Stderr
+	if err := pgPurgeCmd.Run(); err != nil {
+		fmt.Printf("  ⚠️  Warning: PostgreSQL may not have been completely removed: %v\n", err)
+	}
+
+	// Remove PostgreSQL data directory
+	fmt.Println("   Removing PostgreSQL data directory...")
+	exec.Command("rm", "-rf", "/var/lib/postgresql").Run()
 
 	fmt.Println()
 	fmt.Println("✓ Cleanup complete!")
@@ -184,4 +229,36 @@ func runReset(cmd *cobra.Command, args []string) error {
 	fmt.Println("The system has been reset. You can now run 'sudo hibana init' for a fresh installation.")
 
 	return nil
+}
+
+// restoreFirewallFromDatabase connects to PostgreSQL and restores the firewall state
+func restoreFirewallFromDatabase() error {
+	// Try to connect to Hibana database
+	passwordFile := "/etc/hibana/passwords/hibana"
+	password, err := os.ReadFile(passwordFile)
+	if err != nil {
+		return fmt.Errorf("cannot read Hibana password: %w", err)
+	}
+
+	connStr := fmt.Sprintf("host=localhost port=5432 user=hibana password=%s dbname=hibana sslmode=disable",
+		strings.TrimSpace(string(password)))
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer db.Close()
+
+	// Ping to ensure connection is valid
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("database connection failed: %w", err)
+	}
+
+	// Create an installer instance to use its restoreFirewallState method
+	cfg := &config.Config{} // Empty config is fine, we just need the installer
+	inst := installer.New(cfg)
+	inst.SetDatabase(db) // Set the database connection
+
+	// Restore firewall state
+	return inst.RestoreFirewallState()
 }

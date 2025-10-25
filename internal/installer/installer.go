@@ -27,3 +27,13 @@ func (i *Installer) Close() error {
 	}
 	return nil
 }
+
+// SetDatabase sets the database connection (used for reset)
+func (i *Installer) SetDatabase(db *sql.DB) {
+	i.db = db
+}
+
+// RestoreFirewallState is a public wrapper for restoreFirewallState
+func (i *Installer) RestoreFirewallState() error {
+	return i.restoreFirewallState()
+}

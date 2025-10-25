@@ -185,3 +185,37 @@ func GetServerIP() (string, error) {
 
 	return strings.TrimSpace(ips[0]), nil
 }
+
+// DisableSystemdResolved disables systemd-resolved to free port 53
+func DisableSystemdResolved() error {
+	// Stop systemd-resolved
+	cmd := exec.Command("systemctl", "stop", "systemd-resolved")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to stop systemd-resolved: %w", err)
+	}
+
+	// Disable systemd-resolved
+	cmd = exec.Command("systemctl", "disable", "systemd-resolved")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to disable systemd-resolved: %w", err)
+	}
+
+	// Remove the symlink if it exists
+	if _, err := os.Lstat("/etc/resolv.conf"); err == nil {
+		if err := os.Remove("/etc/resolv.conf"); err != nil {
+			return fmt.Errorf("failed to remove /etc/resolv.conf: %w", err)
+		}
+	}
+
+	// Create temporary resolv.conf with public DNS
+	resolvConf := `# Temporary DNS configuration - will be updated after PowerDNS setup
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+nameserver 1.1.1.1
+`
+	if err := os.WriteFile("/etc/resolv.conf", []byte(resolvConf), 0644); err != nil {
+		return fmt.Errorf("failed to write /etc/resolv.conf: %w", err)
+	}
+
+	return nil
+}

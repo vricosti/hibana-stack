@@ -78,7 +78,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(missing) > 0 {
-		fmt.Println("⚠️  Missing packages detected. Installing...")
+		// Check if pdns-server needs to be installed - if so, disable systemd-resolved first
+		needsPowerDNS := false
+		for _, pkg := range missing {
+			if pkg == "pdns-server" {
+				needsPowerDNS = true
+				break
+			}
+		}
+
+		if needsPowerDNS {
+			fmt.Println("\n🔄 Disabling systemd-resolved to free port 53 for PowerDNS...")
+			if err := system.DisableSystemdResolved(); err != nil {
+				return fmt.Errorf("failed to disable systemd-resolved: %w", err)
+			}
+			fmt.Println("✓ systemd-resolved disabled")
+		}
+
+		fmt.Println("\n⚠️  Missing packages detected. Installing...")
 		if err := system.InstallPackages(missing, cfg.PrimaryDomain); err != nil {
 			return fmt.Errorf("package installation failed: %w", err)
 		}

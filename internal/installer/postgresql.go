@@ -196,6 +196,18 @@ CREATE TABLE IF NOT EXISTS configuration (
     value TEXT NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS installation_state (
+    id SERIAL PRIMARY KEY,
+    step VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    firewall_rules_before TEXT,
+    firewall_rules_after TEXT,
+    ports_opened TEXT,
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP,
+    error_message TEXT
+);
 `
 
 	connStr := fmt.Sprintf("host=localhost port=5432 user=%s password=%s dbname=%s sslmode=disable",
@@ -213,21 +225,23 @@ CREATE TABLE IF NOT EXISTS configuration (
 
 // initPowerDNSSchema initializes the PowerDNS database schema
 func (i *Installer) initPowerDNSSchema() error {
-	// PowerDNS PostgreSQL schema
+	// PowerDNS PostgreSQL schema with IF NOT EXISTS for idempotency
 	schema := `
-CREATE TABLE domains (
+CREATE TABLE IF NOT EXISTS domains (
   id                    SERIAL PRIMARY KEY,
   name                  VARCHAR(255) NOT NULL UNIQUE,
   master                VARCHAR(128) DEFAULT NULL,
   last_check            INT DEFAULT NULL,
   type                  VARCHAR(6) NOT NULL,
   notified_serial       BIGINT DEFAULT NULL,
-  account               VARCHAR(40) DEFAULT NULL
+  account               VARCHAR(40) DEFAULT NULL,
+  options               VARCHAR(65535) DEFAULT NULL,
+  catalog               VARCHAR(255) DEFAULT NULL
 );
 
-CREATE INDEX name_index ON domains(name);
+CREATE INDEX IF NOT EXISTS name_index ON domains(name);
 
-CREATE TABLE records (
+CREATE TABLE IF NOT EXISTS records (
   id                    BIGSERIAL PRIMARY KEY,
   domain_id             INT DEFAULT NULL,
   name                  VARCHAR(255) DEFAULT NULL,
@@ -241,19 +255,19 @@ CREATE TABLE records (
   CONSTRAINT domain_exists FOREIGN KEY(domain_id) REFERENCES domains(id) ON DELETE CASCADE
 );
 
-CREATE INDEX rec_name_index ON records(name);
-CREATE INDEX nametype_index ON records(name,type);
-CREATE INDEX domain_id ON records(domain_id);
-CREATE INDEX orderindex ON records(ordername);
+CREATE INDEX IF NOT EXISTS rec_name_index ON records(name);
+CREATE INDEX IF NOT EXISTS nametype_index ON records(name,type);
+CREATE INDEX IF NOT EXISTS domain_id ON records(domain_id);
+CREATE INDEX IF NOT EXISTS orderindex ON records(ordername);
 
-CREATE TABLE supermasters (
+CREATE TABLE IF NOT EXISTS supermasters (
   ip                    INET NOT NULL,
   nameserver            VARCHAR(255) NOT NULL,
   account               VARCHAR(40) DEFAULT NULL,
   PRIMARY KEY(ip, nameserver)
 );
 
-CREATE TABLE comments (
+CREATE TABLE IF NOT EXISTS comments (
   id                    SERIAL PRIMARY KEY,
   domain_id             INT NOT NULL,
   name                  VARCHAR(255) NOT NULL,
@@ -261,23 +275,23 @@ CREATE TABLE comments (
   modified_at           INT NOT NULL,
   account               VARCHAR(40) DEFAULT NULL,
   comment               VARCHAR(65535) NOT NULL,
-  CONSTRAINT domain_exists FOREIGN KEY(domain_id) REFERENCES domains(id) ON DELETE CASCADE
+  CONSTRAINT comments_domain_exists FOREIGN KEY(domain_id) REFERENCES domains(id) ON DELETE CASCADE
 );
 
-CREATE INDEX comments_domain_id_idx ON comments (domain_id);
-CREATE INDEX comments_name_type_idx ON comments (name, type);
-CREATE INDEX comments_order_idx ON comments (domain_id, modified_at);
+CREATE INDEX IF NOT EXISTS comments_domain_id_idx ON comments (domain_id);
+CREATE INDEX IF NOT EXISTS comments_name_type_idx ON comments (name, type);
+CREATE INDEX IF NOT EXISTS comments_order_idx ON comments (domain_id, modified_at);
 
-CREATE TABLE domainmetadata (
+CREATE TABLE IF NOT EXISTS domainmetadata (
   id                    SERIAL PRIMARY KEY,
   domain_id             INT REFERENCES domains(id) ON DELETE CASCADE,
   kind                  VARCHAR(32),
   content               TEXT
 );
 
-CREATE INDEX domainmetadata_idx ON domainmetadata (domain_id, kind);
+CREATE INDEX IF NOT EXISTS domainmetadata_idx ON domainmetadata (domain_id, kind);
 
-CREATE TABLE cryptokeys (
+CREATE TABLE IF NOT EXISTS cryptokeys (
   id                    SERIAL PRIMARY KEY,
   domain_id             INT REFERENCES domains(id) ON DELETE CASCADE,
   flags                 INT NOT NULL,
@@ -286,16 +300,16 @@ CREATE TABLE cryptokeys (
   content               TEXT
 );
 
-CREATE INDEX domainidindex ON cryptokeys(domain_id);
+CREATE INDEX IF NOT EXISTS domainidindex ON cryptokeys(domain_id);
 
-CREATE TABLE tsigkeys (
+CREATE TABLE IF NOT EXISTS tsigkeys (
   id                    SERIAL PRIMARY KEY,
   name                  VARCHAR(255) UNIQUE,
   algorithm             VARCHAR(50),
   secret                VARCHAR(255)
 );
 
-CREATE INDEX namealgoindex ON tsigkeys(name, algorithm);
+CREATE INDEX IF NOT EXISTS namealgoindex ON tsigkeys(name, algorithm);
 `
 
 	connStr := fmt.Sprintf("host=localhost port=5432 user=%s password=%s dbname=%s sslmode=disable",
