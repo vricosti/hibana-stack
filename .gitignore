@@ -28,5 +28,19 @@ go.work.sum
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Hibana-specific
+bin/
+hibana
+hibana-config.json
+*.json.example
+
+# OS
+.DS_Store
+Thumbs.db
+PROMPT.*
