@@ -153,6 +153,14 @@
         completed_at TIMESTAMP,
         error_message TEXT
       );
+
+      -- Grant all privileges to hibana user
+      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO hibana;
+      GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO hibana;
+
+      -- Set default privileges for future tables
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO hibana;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO hibana;
   become_user: postgres
 
 - name: Create powerdns database
