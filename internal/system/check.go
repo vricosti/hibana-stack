@@ -186,6 +186,67 @@ func GetServerIP() (string, error) {
 	return strings.TrimSpace(ips[0]), nil
 }
 
+// FixHostsFile ensures the hostname is resolvable in /etc/hosts to avoid sudo delays
+func FixHostsFile() error {
+	// Get current hostname
+	hostnameBytes, err := exec.Command("hostname").Output()
+	if err != nil {
+		return fmt.Errorf("failed to get hostname: %w", err)
+	}
+	hostname := strings.TrimSpace(string(hostnameBytes))
+
+	// Get FQDN hostname
+	fqdnBytes, err := exec.Command("hostname", "-f").Output()
+	fqdn := strings.TrimSpace(string(fqdnBytes))
+	if err != nil {
+		// If FQDN fails, just use hostname
+		fqdn = hostname
+	}
+
+	// Read current /etc/hosts
+	hostsData, err := os.ReadFile("/etc/hosts")
+	if err != nil {
+		return fmt.Errorf("failed to read /etc/hosts: %w", err)
+	}
+
+	hostsContent := string(hostsData)
+
+	// Check if hostname is already in /etc/hosts
+	if strings.Contains(hostsContent, hostname) && strings.Contains(hostsContent, "127.0.1.1") {
+		// Already configured
+		return nil
+	}
+
+	// Check if there's already a 127.0.1.1 entry
+	lines := strings.Split(hostsContent, "\n")
+	var newLines []string
+	found127011 := false
+
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "127.0.1.1") {
+			// Replace existing 127.0.1.1 line
+			newLines = append(newLines, fmt.Sprintf("127.0.1.1\t%s %s", fqdn, hostname))
+			found127011 = true
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+
+	if !found127011 {
+		// Add new entry if 127.0.1.1 wasn't found
+		newLines = append(newLines, "# Added by hibana for hostname resolution")
+		newLines = append(newLines, fmt.Sprintf("127.0.1.1\t%s %s", fqdn, hostname))
+	}
+
+	// Write updated /etc/hosts
+	newHostsContent := strings.Join(newLines, "\n")
+	if err := os.WriteFile("/etc/hosts", []byte(newHostsContent), 0644); err != nil {
+		return fmt.Errorf("failed to write /etc/hosts: %w", err)
+	}
+
+	return nil
+}
+
 // DisableSystemdResolved disables systemd-resolved to free port 53
 func DisableSystemdResolved() error {
 	// Stop systemd-resolved

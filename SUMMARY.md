@@ -39,7 +39,7 @@ hibana-stack/
 ├── CLAUDE.md                       # Project context for AI
 ├── PROMPT.md                       # Development roadmap
 ├── INSTALL.md                      # Installation guide
-├── config-example.json             # Example configuration
+├── config-example.yaml             # Example configuration
 ├── .gitignore                      # Git ignore rules
 └── LICENSE                         # Apache 2.0 License
 ```
@@ -48,7 +48,7 @@ hibana-stack/
 
 ### 1. ✅ CLI Tool
 - Built with Cobra framework
-- JSON-based configuration
+- YAML-based configuration
 - Automatic config skeleton generation
 - Comprehensive error handling
 - Progress indicators
@@ -164,31 +164,35 @@ hibana-stack/
 
 ## Configuration Format
 
-```json
-{
-  "primary_domain": "primarydomain.com",
-  "server_ip": "YOUR_SERVER_IP",
-  "subdomains": [
-    "adm",
-    "mail",
-    "webmail",
-    "www"
-  ],
-  "email_accounts": [
-    {
-      "username": "admin",
-      "password": "SECURE_PASSWORD",
-      "full_name": "Administrator"
-    }
-  ],
-  "test_email": "your-email@example.com"
-}
+```yaml
+primary_domain: primarydomain.com
+server_ip: YOUR_SERVER_IP
+# system_users:  # Optional - Uncomment to create system users
+#   - username: devuser
+#     password: SECURE_PASSWORD
+#     name: Developer
+#     sudoers: false
+#     ssh_pub_key: ""
+subdomains:
+  - name: adm
+    role: webadmin
+  - name: mail
+    role: mailserver
+  - name: webmail
+    role: webmail
+  - name: www
+    role: website
+email_accounts:
+  - username: admin
+    password: SECURE_PASSWORD
+    full_name: Administrator
+test_email: your-email@example.com
 ```
 
 ## Installation Flow
 
 1. **System Check** → Ubuntu 24.04 verification
-2. **Config Load** → Load or create JSON config
+2. **Config Load** → Load or create YAML config
 3. **Package Install** → Install required packages
 4. **PostgreSQL** → Create databases and schemas
 5. **PowerDNS** → Configure DNS server
@@ -207,13 +211,13 @@ hibana-stack/
 make build
 
 # Generate config
-sudo ./bin/hibana init --config hibana-config.json
+sudo ./bin/hibana init --config hibana-config.yaml
 
 # Edit config
-nano hibana-config.json
+nano hibana-config.yaml
 
 # Install
-sudo ./bin/hibana init --config hibana-config.json
+sudo ./bin/hibana init --config hibana-config.yaml
 ```
 
 ## What You Get
@@ -367,7 +371,7 @@ Before production use, test:
 - `INSTALL.md` - Detailed installation guide
 - `CLAUDE.md` - AI context and architecture
 - `PROMPT.md` - Development roadmap
-- `config-example.json` - Example configuration
+- `config-example.yaml` - Example configuration
 
 ## License
 

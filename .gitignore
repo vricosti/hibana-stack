@@ -37,8 +37,8 @@ go.work.sum
 # Hibana-specific
 bin/
 hibana
-hibana-config.json
-*.json.example
+hibana-config.yaml
+*.yaml.example
 
 # OS
 .DS_Store

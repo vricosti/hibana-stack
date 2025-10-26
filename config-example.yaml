@@ -1,0 +1,25 @@
+primary_domain: primarydomain.com
+server_ip: 203.0.113.10
+# system_users:  # Optional - Uncomment to create system users
+#   - username: devuser
+#     password: ANOTHER_SECURE_PASSWORD
+#     name: Developer
+#     sudoers: false
+#     ssh_pub_key: ""  # Leave empty for password-only authentication
+subdomains:
+  - name: adm
+    role: webadmin
+  - name: mail
+    role: mailserver
+  - name: webmail
+    role: webmail
+  - name: www
+    role: website
+email_accounts:
+  - username: admin
+    password: CHANGE_THIS_SECURE_PASSWORD
+    full_name: System Administrator
+  - username: contact
+    password: ANOTHER_SECURE_PASSWORD
+    full_name: Contact
+test_email: johndoe@gmail.com

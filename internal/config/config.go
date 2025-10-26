@@ -1,29 +1,46 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config represents the Hibana Stack configuration
 type Config struct {
-	PrimaryDomain string         `json:"primary_domain"`
-	ServerIP      string         `json:"server_ip"`
-	Subdomains    []string       `json:"subdomains"`
-	EmailAccounts []EmailAccount `json:"email_accounts"`
-	TestEmail     string         `json:"test_email,omitempty"`
+	PrimaryDomain string         `yaml:"primary_domain"`
+	ServerIP      string         `yaml:"server_ip"`
+	SystemUsers   []SystemUser   `yaml:"system_users,omitempty"`
+	Subdomains    []Subdomain    `yaml:"subdomains"`
+	EmailAccounts []EmailAccount `yaml:"email_accounts"`
+	TestEmail     string         `yaml:"test_email,omitempty"`
+}
+
+// Subdomain represents a subdomain configuration with its role
+type Subdomain struct {
+	Name string `yaml:"name"`
+	Role string `yaml:"role"`
+}
+
+// SystemUser represents a system user configuration
+type SystemUser struct {
+	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
+	Name      string `yaml:"name,omitempty"`
+	Sudoers   bool   `yaml:"sudoers"`
+	SSHPubKey string `yaml:"ssh_pub_key,omitempty"`
 }
 
 // EmailAccount represents an email account configuration
 type EmailAccount struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	FullName string `json:"full_name,omitempty"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	FullName string `yaml:"full_name,omitempty"`
 }
 
-// LoadConfig loads configuration from a JSON file
+// LoadConfig loads configuration from a YAML file
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -31,7 +48,7 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
@@ -74,11 +91,13 @@ func GenerateSkeleton() *Config {
 	return &Config{
 		PrimaryDomain: "example.com",
 		ServerIP:      "YOUR_SERVER_IP",
-		Subdomains: []string{
-			"adm",
-			"mail",
-			"webmail",
-			"www",
+		// SystemUsers is optional - omitted from skeleton
+		SystemUsers: []SystemUser{},
+		Subdomains: []Subdomain{
+			{Name: "adm", Role: "webadmin"},
+			{Name: "mail", Role: "mailserver"},
+			{Name: "webmail", Role: "webmail"},
+			{Name: "www", Role: "website"},
 		},
 		EmailAccounts: []EmailAccount{
 			{

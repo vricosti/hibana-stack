@@ -10,7 +10,7 @@
 | Component | Status | Files | Description |
 |-----------|--------|-------|-------------|
 | CLI Framework | ✅ Done | `cmd/hibana/main.go`, `internal/cmd/` | Cobra-based CLI with init command |
-| Configuration | ✅ Done | `internal/config/config.go` | JSON config with validation and skeleton generation |
+| Configuration | ✅ Done | `internal/config/config.go` | YAML config with validation and skeleton generation |
 | System Checks | ✅ Done | `internal/system/check.go` | Ubuntu verification and package management |
 | PostgreSQL | ✅ Done | `internal/installer/postgresql.go` | Database setup for Hibana and PowerDNS |
 | PowerDNS | ✅ Done | `internal/installer/powerdns.go` | DNS server with PostgreSQL backend |
@@ -35,10 +35,10 @@ Language                     Files        Lines         Code     Comments
 ────────────────────────────────────────────────────────────────────────
 Go                              12        ~2,800       ~2,500        ~300
 Markdown                         7        ~2,000       ~2,000          ~0
-JSON                             2           ~40          ~40          ~0
+YAML                             2           ~20          ~20          ~0
 Makefile                         1           ~40          ~40          ~0
 ────────────────────────────────────────────────────────────────────────
-Total                           22        ~4,880       ~4,580        ~300
+Total                           22        ~4,860       ~4,560        ~300
 ```
 
 ## Features Delivered
@@ -52,7 +52,7 @@ Total                           22        ~4,880       ~4,580        ~300
    - [x] Service management
 
 2. **Configuration Management**
-   - [x] JSON-based configuration
+   - [x] YAML-based configuration
    - [x] Automatic skeleton generation
    - [x] Configuration validation
    - [x] Example configuration file
@@ -127,7 +127,7 @@ Total                           22        ~4,880       ~4,580        ~300
 | SUMMARY.md | ✅ Complete | Phase 1 summary |
 | QUICKREF.md | ✅ Complete | Command reference |
 | STATUS.md | ✅ Complete | Current status (this file) |
-| config-example.json | ✅ Complete | Configuration example |
+| config-example.yaml | ✅ Complete | Configuration example |
 
 ## Testing Status
 

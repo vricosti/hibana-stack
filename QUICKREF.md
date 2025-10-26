@@ -9,31 +9,40 @@ cd hibana-stack
 make build
 
 # 2. Create config
-sudo ./bin/hibana init --config hibana-config.json
+sudo ./bin/hibana init --config hibana-config.yaml
 
 # 3. Edit config (change domain, IP, passwords)
-nano hibana-config.json
+nano hibana-config.yaml
 
 # 4. Run installer
-sudo ./bin/hibana init --config hibana-config.json
+sudo ./bin/hibana init --config hibana-config.yaml
 ```
 
 ## Configuration
 
-```json
-{
-  "primary_domain": "primarydomain.com",
-  "server_ip": "YOUR_SERVER_IP",
-  "subdomains": ["adm", "mail", "webmail", "www"],
-  "email_accounts": [
-    {
-      "username": "admin",
-      "password": "SECURE_PASSWORD",
-      "full_name": "Administrator"
-    }
-  ],
-  "test_email": "test@example.com"
-}
+```yaml
+primary_domain: primarydomain.com
+server_ip: YOUR_SERVER_IP
+# system_users:  # Optional - Uncomment to create system users
+#   - username: devuser
+#     password: SECURE_PASSWORD
+#     name: Developer
+#     sudoers: false
+#     ssh_pub_key: ""
+subdomains:
+  - name: adm
+    role: webadmin
+  - name: mail
+    role: mailserver
+  - name: webmail
+    role: webmail
+  - name: www
+    role: website
+email_accounts:
+  - username: admin
+    password: SECURE_PASSWORD
+    full_name: Administrator
+test_email: test@example.com
 ```
 
 ## Services

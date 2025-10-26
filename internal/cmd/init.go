@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -9,6 +8,7 @@ import (
 	"github.com/vricosti/hibana-stack/internal/config"
 	"github.com/vricosti/hibana-stack/internal/installer"
 	"github.com/vricosti/hibana-stack/internal/system"
+	"gopkg.in/yaml.v3"
 )
 
 var initCmd = &cobra.Command{
@@ -32,7 +32,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	var err error
 
 	if cfgFile == "" {
-		cfgFile = "./hibana-config.json"
+		cfgFile = "./hibana-config.yaml"
 	}
 
 	if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
@@ -40,7 +40,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("Creating skeleton configuration file...")
 
 		skeleton := config.GenerateSkeleton()
-		data, _ := json.MarshalIndent(skeleton, "", "  ")
+		data, _ := yaml.Marshal(skeleton)
 
 		if err := os.WriteFile(cfgFile, data, 0600); err != nil {
 			return fmt.Errorf("failed to create config file: %w", err)
@@ -63,14 +63,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("installation must be run as root (use sudo)")
 	}
 
-	// Step 2: Check Ubuntu version
+	// Step 2: Fix /etc/hosts to avoid DNS resolution delays
+	if err := system.FixHostsFile(); err != nil {
+		fmt.Printf("⚠️  Warning: failed to update /etc/hosts: %v\n", err)
+		// Continue anyway, this is not critical
+	}
+
+	// Step 3: Check Ubuntu version
 	fmt.Println("\n📋 Checking system requirements...")
 	if err := system.CheckUbuntuVersion(); err != nil {
 		return fmt.Errorf("system check failed: %w", err)
 	}
 	fmt.Println("✓ Ubuntu 24.04 detected")
 
-	// Step 3: Check required packages
+	// Step 4: Check required packages
 	fmt.Println("\n📦 Checking required packages...")
 	missing, err := system.CheckRequiredPackages()
 	if err != nil {
@@ -104,66 +110,75 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("✓ All required packages are installed")
 	}
 
-	// Step 4: Initialize installer
+	// Step 5: Initialize installer
 	inst := installer.New(cfg)
 
-	// Step 5: Setup PostgreSQL
+	// Step 6: Setup System Users
+	if len(cfg.SystemUsers) > 0 {
+		fmt.Println("\n👤 Setting up system users...")
+		if err := inst.SetupSystemUsers(); err != nil {
+			return fmt.Errorf("system users setup failed: %w", err)
+		}
+		fmt.Println("✓ System users configured")
+	}
+
+	// Step 7: Setup PostgreSQL
 	fmt.Println("\n🗄️  Setting up PostgreSQL...")
 	if err := inst.SetupPostgreSQL(); err != nil {
 		return fmt.Errorf("PostgreSQL setup failed: %w", err)
 	}
 	fmt.Println("✓ PostgreSQL configured")
 
-	// Step 6: Setup PowerDNS
+	// Step 8: Setup PowerDNS
 	fmt.Println("\n🌐 Setting up PowerDNS...")
 	if err := inst.SetupPowerDNS(); err != nil {
 		return fmt.Errorf("PowerDNS setup failed: %w", err)
 	}
 	fmt.Println("✓ PowerDNS configured")
 
-	// Step 7: Setup Mail Server
+	// Step 9: Setup Mail Server
 	fmt.Println("\n📧 Setting up mail server (Postfix/Dovecot)...")
 	if err := inst.SetupMailServer(); err != nil {
 		return fmt.Errorf("mail server setup failed: %w", err)
 	}
 	fmt.Println("✓ Mail server configured")
 
-	// Step 8: Setup DKIM and DMARC
+	// Step 10: Setup DKIM and DMARC
 	fmt.Println("\n🔐 Setting up DKIM and DMARC...")
 	if err := inst.SetupDKIM(); err != nil {
 		return fmt.Errorf("DKIM/DMARC setup failed: %w", err)
 	}
 	fmt.Println("✓ DKIM and DMARC configured")
 
-	// Step 9: Setup SpamAssassin
+	// Step 11: Setup SpamAssassin
 	fmt.Println("\n🛡️  Setting up SpamAssassin anti-spam filter...")
 	if err := inst.SetupSpamAssassin(); err != nil {
 		return fmt.Errorf("SpamAssassin setup failed: %w", err)
 	}
 	fmt.Println("✓ SpamAssassin configured")
 
-	// Step 10: Configure DNS records
+	// Step 12: Configure DNS records
 	fmt.Println("\n📝 Adding DNS records to PowerDNS...")
 	if err := inst.ConfigureDNSRecords(); err != nil {
 		return fmt.Errorf("DNS configuration failed: %w", err)
 	}
 	fmt.Println("✓ DNS records configured")
 
-	// Step 11: Setup Traefik
+	// Step 13: Setup Traefik
 	fmt.Println("\n🔀 Setting up Traefik reverse proxy...")
 	if err := inst.SetupTraefik(); err != nil {
 		return fmt.Errorf("Traefik setup failed: %w", err)
 	}
 	fmt.Println("✓ Traefik configured")
 
-	// Step 12: Deploy Docker containers
+	// Step 14: Deploy Docker containers
 	fmt.Println("\n🐳 Deploying Docker containers...")
 	if err := inst.DeployContainers(); err != nil {
 		return fmt.Errorf("container deployment failed: %w", err)
 	}
 	fmt.Println("✓ Containers deployed")
 
-	// Step 13: Test email
+	// Step 15: Test email
 	fmt.Println("\n✉️  Testing email functionality...")
 	if err := inst.TestEmail(); err != nil {
 		fmt.Printf("⚠️  Email test failed: %v\n", err)
@@ -172,7 +187,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("✓ Email test successful")
 	}
 
-	// Step 14: Generate and display credentials summary
+	// Step 16: Generate and display credentials summary
 	fmt.Println("\n🔐 Generating credentials summary...")
 	credentialsSummary, err := inst.GetCredentialsSummary()
 	if err != nil {

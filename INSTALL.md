@@ -36,43 +36,58 @@ make install
 The first time you run `hibana init`, it will create a configuration skeleton:
 
 ```bash
-sudo ./bin/hibana init --config ./hibana-config.json
+sudo ./bin/hibana init --config ./hibana-config.yaml
 ```
 
-This creates `hibana-config.json` with this structure:
+This creates `hibana-config.yaml` with this structure:
 
-```json
-{
-  "primary_domain": "primarydomain.com",
-  "server_ip": "YOUR_SERVER_IP",
-  "subdomains": [
-    "adm",
-    "mail",
-    "webmail",
-    "www"
-  ],
-  "email_accounts": [
-    {
-      "username": "admin",
-      "password": "CHANGE_THIS_PASSWORD",
-      "full_name": "Administrator"
-    }
-  ],
-  "test_email": "your-email@example.com"
-}
+```yaml
+primary_domain: primarydomain.com
+server_ip: YOUR_SERVER_IP
+# system_users:  # Optional - Uncomment to create system users
+#   - username: devuser
+#     password: SECURE_PASSWORD
+#     name: Developer
+#     sudoers: false
+#     ssh_pub_key: ""
+subdomains:
+  - name: adm
+    role: webadmin
+  - name: mail
+    role: mailserver
+  - name: webmail
+    role: webmail
+  - name: www
+    role: website
+email_accounts:
+  - username: admin
+    password: CHANGE_THIS_PASSWORD
+    full_name: Administrator
+test_email: your-email@example.com
 ```
+
+**Note**: The `system_users` section is optional. See `config-example.yaml` for an example of how to add system users.
 
 ### 4. Edit Configuration
 
-Edit `hibana-config.json` with your actual values:
+Edit `hibana-config.yaml` with your actual values:
 
 ```bash
-nano hibana-config.json
+nano hibana-config.yaml
 ```
 
 **Important fields:**
 - `primary_domain`: Your domain name (e.g., `primarydomain.com`)
 - `server_ip`: Your server's public IP address
+- `subdomains`: List of subdomains with their roles
+  - `name`: Subdomain name
+  - `role`: Subdomain role (webadmin, mailserver, webmail, website)
+- `system_users`: (Optional) List of system users to create
+  - `username`: Linux username
+  - `password`: User password
+  - `name`: Full name
+  - `sudoers`: `true` to grant sudo access, `false` otherwise
+  - `ssh_pub_key`: SSH public key for key-based authentication (leave empty for password-only)
 - `email_accounts`: List of email accounts to create
   - `username`: Email username (will become username@primarydomain.com)
   - `password`: Strong password for the email account
@@ -80,36 +95,38 @@ nano hibana-config.json
 
 **Example configuration:**
 
-```json
-{
-  "primary_domain": "primarydomain.com",
-  "server_ip": "203.0.113.10",
-  "subdomains": [
-    "adm",
-    "mail",
-    "webmail",
-    "www"
-  ],
-  "email_accounts": [
-    {
-      "username": "admin",
-      "password": "SecureP@ssw0rd123!",
-      "full_name": "System Administrator"
-    },
-    {
-      "username": "contact",
-      "password": "AnotherSecureP@ss!",
-      "full_name": "Contact"
-    }
-  ],
-  "test_email": "your-personal-email@gmail.com"
-}
+```yaml
+primary_domain: primarydomain.com
+server_ip: 203.0.113.10
+# system_users:  # Optional - Uncomment to create system users
+#   - username: devuser
+#     password: SecureP@ssw0rd456!
+#     name: Developer Account
+#     sudoers: false
+#     ssh_pub_key: ""  # Leave empty for password-only auth
+subdomains:
+  - name: adm
+    role: webadmin
+  - name: mail
+    role: mailserver
+  - name: webmail
+    role: webmail
+  - name: www
+    role: website
+email_accounts:
+  - username: admin
+    password: SecureP@ssw0rd123!
+    full_name: System Administrator
+  - username: contact
+    password: AnotherSecureP@ss!
+    full_name: Contact
+test_email: your-personal-email@gmail.com
 ```
 
 ### 5. Run Installation
 
 ```bash
-sudo ./bin/hibana init --config ./hibana-config.json
+sudo ./bin/hibana init --config ./hibana-config.yaml
 ```
 
 The installer will:
@@ -189,7 +206,7 @@ dig TXT default._domainkey.primarydomain.com
 Hibana Stack is idempotent. You can safely re-run the installer:
 
 ```bash
-sudo ./bin/hibana init --config ./hibana-config.json
+sudo ./bin/hibana init --config ./hibana-config.yaml
 ```
 
 It will:

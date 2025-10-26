@@ -1,12 +1,12 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/vricosti/hibana-stack/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 var configCmd = &cobra.Command{
@@ -25,7 +25,7 @@ var generateCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(configCmd)
 	configCmd.AddCommand(generateCmd)
-	generateCmd.Flags().StringP("output", "o", "hibana-config.json", "Output file path")
+	generateCmd.Flags().StringP("output", "o", "hibana-config.yaml", "Output file path")
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {
@@ -38,7 +38,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 
 	// Generate skeleton
 	skeleton := config.GenerateSkeleton()
-	data, err := json.MarshalIndent(skeleton, "", "  ")
+	data, err := yaml.Marshal(skeleton)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}

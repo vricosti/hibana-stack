@@ -31,13 +31,13 @@ cd hibana-stack
 make build
 
 # Generate configuration skeleton
-sudo ./bin/hibana init --config hibana-config.json
+sudo ./bin/hibana init --config hibana-config.yaml
 
 # Edit the configuration with your domain and settings
-nano hibana-config.json
+nano hibana-config.yaml
 
 # Run the installer
-sudo ./bin/hibana init --config hibana-config.json
+sudo ./bin/hibana init --config hibana-config.yaml
 ```
 
 See [INSTALL.md](INSTALL.md) for detailed installation instructions.
@@ -76,25 +76,34 @@ After successful installation, you'll have:
 
 ## Configuration
 
-The `hibana-config.json` file contains all settings:
+The `hibana-config.yaml` file contains all settings:
 
-```json
-{
-  "primary_domain": "primarydomain.com",
-  "server_ip": "YOUR_SERVER_IP",
-  "subdomains": ["adm", "mail", "webmail", "www"],
-  "email_accounts": [
-    {
-      "username": "admin",
-      "password": "SECURE_PASSWORD",
-      "full_name": "Administrator"
-    }
-  ],
-  "test_email": "your-email@example.com"
-}
+```yaml
+primary_domain: primarydomain.com
+server_ip: YOUR_SERVER_IP
+# system_users:  # Optional - Uncomment to create system users
+#   - username: devuser
+#     password: SECURE_PASSWORD
+#     name: Developer
+#     sudoers: false
+#     ssh_pub_key: ""  # Empty = password auth only
+subdomains:
+  - name: adm
+    role: webadmin
+  - name: mail
+    role: mailserver
+  - name: webmail
+    role: webmail
+  - name: www
+    role: website
+email_accounts:
+  - username: admin
+    password: SECURE_PASSWORD
+    full_name: Administrator
+test_email: your-email@example.com
 ```
 
-See [config-example.json](config-example.json) for a complete example.
+See [config-example.yaml](config-example.yaml) for a complete example.
 
 ## Project Status
 
@@ -128,7 +137,7 @@ See [config-example.json](config-example.json) for a complete example.
 - 📊 [SUMMARY.md](SUMMARY.md) - Phase 1 implementation summary
 - 🏗️ [CLAUDE.md](CLAUDE.md) - Project context and architecture
 - 🗺️ [PROMPT.md](PROMPT.md) - Development roadmap and specifications
-- ⚙️ [config-example.json](config-example.json) - Example configuration file
+- ⚙️ [config-example.yaml](config-example.yaml) - Example configuration file
 
 ## License
 
@@ -149,7 +158,7 @@ For issues and questions:
 
 **✅ Phase 1 - COMPLETED**
 - Core infrastructure automation
-- CLI tool with JSON configuration
+- CLI tool with YAML configuration
 - Full mail server with DKIM/DMARC/SPF + SpamAssassin
 - DNS server (PowerDNS)
 - Reverse proxy (Traefik)
