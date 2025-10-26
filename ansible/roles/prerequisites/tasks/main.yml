@@ -62,7 +62,12 @@
     state: stopped
     enabled: no
 
-- name: Remove /etc/resolv.conf symlink
+- name: Remove immutable flag from /etc/resolv.conf
+  command: chattr -i /etc/resolv.conf
+  failed_when: false
+  changed_when: false
+
+- name: Remove /etc/resolv.conf
   file:
     path: /etc/resolv.conf
     state: absent
