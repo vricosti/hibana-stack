@@ -53,11 +53,6 @@
   when: cluster_status.stdout != "online"
   register: pg_start
 
-- name: Restart PostgreSQL cluster if already running
-  command: pg_ctlcluster 16 main restart
-  when: cluster_status.stdout == "online"
-  register: pg_restart
-
 - name: Wait for PostgreSQL to be ready
   pause:
     seconds: 5
