@@ -38,18 +38,12 @@
     name: postgresql
     enabled: yes
 
-- name: Add postgres user to ssl-cert group
-  user:
-    name: postgres
-    groups: ssl-cert
-    append: yes
-
-- name: Ensure ssl-cert-snakeoil.key has correct permissions
-  file:
-    path: /etc/ssl/private/ssl-cert-snakeoil.key
-    owner: root
-    group: ssl-cert
-    mode: '0640'
+- name: Disable SSL in PostgreSQL configuration
+  lineinfile:
+    path: /etc/postgresql/16/main/postgresql.conf
+    regexp: '^ssl\s*='
+    line: 'ssl = off'
+    state: present
 
 - name: Check if PostgreSQL cluster is running
   shell: pg_lsclusters -h | grep "16.*main" | awk '{print $4}'
