@@ -186,3 +186,27 @@ func copyDir(src string, dst string) error {
 
 	return nil
 }
+
+// CopyResetPlaybook copie le playbook de reset
+func CopyResetPlaybook(workspaceDir string) error {
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	sourcePath := filepath.Join(cwd, "ansible", "reset-playbook.yml")
+	destPath := filepath.Join(workspaceDir, "reset-playbook.yml")
+
+	// Copy reset playbook
+	content, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return fmt.Errorf("failed to read reset playbook: %w", err)
+	}
+
+	if err := os.WriteFile(destPath, content, 0644); err != nil {
+		return fmt.Errorf("failed to write reset playbook: %w", err)
+	}
+
+	return nil
+}

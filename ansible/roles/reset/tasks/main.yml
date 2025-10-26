@@ -1,0 +1,202 @@
+---
+# Reset role - Clean up all Hibana Stack components
+
+- name: Stop Docker containers
+  shell: |
+    docker stop $(docker ps -aq) 2>/dev/null || true
+    docker rm $(docker ps -aq) 2>/dev/null || true
+  ignore_errors: yes
+
+- name: Remove Docker images
+  shell: docker rmi $(docker images -q) 2>/dev/null || true
+  ignore_errors: yes
+
+- name: Remove Docker network
+  docker_network:
+    name: hibana-network
+    state: absent
+  ignore_errors: yes
+
+- name: Stop services
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  loop:
+    - postfix
+    - dovecot
+    - opendkim
+    - pdns
+    - spamd
+    - docker
+  ignore_errors: yes
+
+- name: Remove immutable flag from resolv.conf
+  command: chattr -i /etc/resolv.conf
+  ignore_errors: yes
+
+- name: Re-enable systemd-resolved
+  systemd:
+    name: systemd-resolved
+    state: started
+    enabled: yes
+  ignore_errors: yes
+
+- name: Restore original resolv.conf
+  file:
+    path: /etc/resolv.conf
+    state: absent
+  ignore_errors: yes
+
+- name: Create symlink to systemd-resolved
+  file:
+    src: /run/systemd/resolve/stub-resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+  ignore_errors: yes
+
+- name: Remove packages
+  apt:
+    name:
+      - pdns-server
+      - pdns-backend-pgsql
+      - postfix
+      - dovecot-core
+      - dovecot-imapd
+      - dovecot-pop3d
+      - dovecot-lmtpd
+      - dovecot-sieve
+      - dovecot-managesieved
+      - opendkim
+      - opendkim-tools
+      - mailutils
+      - spamassassin
+      - spamc
+      - docker.io
+      - docker-compose
+      - postgresql
+      - postgresql-contrib
+      - python3-psycopg2
+    state: absent
+    purge: yes
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  ignore_errors: yes
+
+- name: Autoremove unused packages
+  apt:
+    autoremove: yes
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Clean apt cache
+  apt:
+    autoclean: yes
+
+- name: Kill remaining PostgreSQL processes
+  shell: pkill -9 postgres || true
+  ignore_errors: yes
+
+- name: Wait for processes to die
+  pause:
+    seconds: 2
+
+- name: Remove configuration directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/postfix
+    - /etc/dovecot
+    - /etc/opendkim
+    - /etc/powerdns
+    - /etc/hibana
+    - /var/spool/mail
+    - /var/mail
+    - /etc/traefik
+    - /opt/traefik
+    - /var/lib/docker
+    - /etc/spamassassin
+    - /run/opendkim
+    - /var/lib/postgresql
+    - /etc/letsencrypt
+  ignore_errors: yes
+
+- name: Remove SSL certificates
+  shell: |
+    rm -f /etc/ssl/certs/hibana-*.crt
+    rm -f /etc/ssl/private/hibana-*.key
+  ignore_errors: yes
+
+- name: Remove mail system users
+  user:
+    name: "{{ item }}"
+    state: absent
+    remove: yes
+  loop:
+    - vmail
+    - spamd
+  ignore_errors: yes
+
+- name: Remove system users created during setup
+  user:
+    name: "{{ item.username }}"
+    state: absent
+    remove: yes
+  loop: "{{ system_users | default([]) }}"
+  when: system_users is defined
+  ignore_errors: yes
+
+- name: Clean /etc/hosts - Remove Hibana entries
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1.*{{ primary_domain | default("") }}.*'
+    state: absent
+  when: primary_domain is defined
+  ignore_errors: yes
+
+- name: Remove UFW rules for DNS
+  ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    delete: yes
+  loop:
+    - { port: "53", proto: "tcp" }
+    - { port: "53", proto: "udp" }
+  when: ansible_facts.services['ufw.service'] is defined
+  ignore_errors: yes
+
+- name: Remove UFW rules for mail
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    delete: yes
+  loop:
+    - "25"
+    - "587"
+    - "465"
+    - "993"
+    - "995"
+  when: ansible_facts.services['ufw.service'] is defined
+  ignore_errors: yes
+
+- name: Remove UFW rules for web
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    delete: yes
+  loop:
+    - "80"
+    - "443"
+  when: ansible_facts.services['ufw.service'] is defined
+  ignore_errors: yes
+
+- name: Display completion message
+  debug:
+    msg: |
+      ✓ Cleanup complete!
+
+      The system has been reset. You can now run 'sudo hibana init' for a fresh installation.

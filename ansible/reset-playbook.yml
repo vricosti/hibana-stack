@@ -1,0 +1,23 @@
+---
+- name: Reset Hibana Stack
+  hosts: hibana_server
+  become: yes
+  gather_facts: yes
+
+  roles:
+    - role: reset
+      tags: [reset, cleanup]
+
+  post_tasks:
+    - name: Final cleanup message
+      debug:
+        msg: |
+
+          ========================================
+          🎉 Hibana Stack has been reset!
+          ========================================
+
+          All packages, configurations, and data have been removed.
+          The system is now in its original state.
+
+          You can run 'sudo hibana init' for a fresh installation.

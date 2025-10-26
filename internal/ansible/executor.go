@@ -62,3 +62,28 @@ func StreamOutput(cmd *exec.Cmd) error {
 
 	return nil
 }
+
+// ExecuteResetPlaybook exécute le playbook de reset
+func ExecuteResetPlaybook(workspaceDir string, verbose bool) error {
+	playbookPath := filepath.Join(workspaceDir, "reset-playbook.yml")
+	inventoryPath := filepath.Join(workspaceDir, "inventory.ini")
+
+	args := []string{
+		"-i", inventoryPath,
+		playbookPath,
+	}
+
+	if verbose {
+		args = append(args, "-vvv")
+	}
+
+	cmd := exec.Command("ansible-playbook", args...)
+	cmd.Dir = workspaceDir
+
+	// Stream output in real-time
+	if err := StreamOutput(cmd); err != nil {
+		return fmt.Errorf("ansible-playbook execution failed: %w", err)
+	}
+
+	return nil
+}
