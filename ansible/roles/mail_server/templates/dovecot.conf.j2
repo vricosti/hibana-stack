@@ -11,6 +11,9 @@ ssl_cert = </etc/ssl/certs/hibana-{{ primary_domain }}.crt
 ssl_key = </etc/ssl/private/hibana-{{ primary_domain }}.key
 ssl_min_protocol = TLSv1.2
 
+# Allow plaintext authentication (needed for Roundcube connecting over internal network)
+disable_plaintext_auth = no
+
 # Mail location
 mail_location = maildir:/var/mail/vhosts/%d/%n
 mail_privileged_group = vmail

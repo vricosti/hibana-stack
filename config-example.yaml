@@ -19,7 +19,7 @@ email_accounts:
   - username: admin
     password: CHANGE_THIS_SECURE_PASSWORD
     full_name: System Administrator
-  - username: contact
-    password: ANOTHER_SECURE_PASSWORD
-    full_name: Contact
+#  - username: contact
+#    password: ANOTHER_SECURE_PASSWORD
+#    full_name: Contact
 test_email: johndoe@gmail.com
