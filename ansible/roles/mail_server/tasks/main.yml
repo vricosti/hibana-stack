@@ -121,7 +121,7 @@
     dest: /etc/dovecot/users
     owner: root
     group: root
-    mode: '0600'
+    mode: '0644'
   notify: Restart Dovecot
 
 - name: Create Postfix virtual mailbox file
