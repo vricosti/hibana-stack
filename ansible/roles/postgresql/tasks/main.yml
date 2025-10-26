@@ -1,12 +1,21 @@
 ---
 - name: Check if PostgreSQL cluster exists
-  stat:
-    path: /var/lib/postgresql/16/main/PG_VERSION
-  register: pg_cluster
+  command: pg_lsclusters -h
+  register: pg_clusters
+  failed_when: false
+  changed_when: false
+
+- name: Display existing clusters
+  debug:
+    var: pg_clusters.stdout_lines
+
+- name: Check if main cluster exists
+  set_fact:
+    cluster_exists: "{{ pg_clusters.stdout | regex_search('16\\s+main') is not none }}"
 
 - name: Initialize PostgreSQL cluster if needed
   command: /usr/bin/pg_createcluster 16 main --start
-  when: not pg_cluster.stat.exists
+  when: not cluster_exists
   become: yes
 
 - name: Ensure PostgreSQL is enabled
