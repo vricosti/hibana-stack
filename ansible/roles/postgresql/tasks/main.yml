@@ -1,9 +1,27 @@
 ---
-- name: Ensure PostgreSQL is running
+- name: Ensure PostgreSQL is enabled
   systemd:
     name: postgresql
-    state: started
     enabled: yes
+
+- name: Restart PostgreSQL to ensure clean state
+  systemd:
+    name: postgresql
+    state: restarted
+
+- name: Wait for PostgreSQL to be ready
+  wait_for:
+    path: /var/run/postgresql/.s.PGSQL.5432
+    timeout: 30
+    state: present
+
+- name: Verify PostgreSQL is accepting connections
+  command: pg_isready
+  register: pg_ready
+  retries: 5
+  delay: 2
+  until: pg_ready.rc == 0
+  changed_when: false
 
 - name: Generate random password for hibana database user
   set_fact:
@@ -28,6 +46,51 @@
     db: hibana
     priv: ALL
     state: present
+  become_user: postgres
+
+- name: Create Hibana schema
+  postgresql_query:
+    db: hibana
+    query: |
+      CREATE TABLE IF NOT EXISTS domains (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) UNIQUE NOT NULL,
+        server_ip VARCHAR(45) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS email_accounts (
+        id SERIAL PRIMARY KEY,
+        domain_id INTEGER REFERENCES domains(id) ON DELETE CASCADE,
+        username VARCHAR(255) NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        full_name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(domain_id, username)
+      );
+
+      CREATE TABLE IF NOT EXISTS dkim_keys (
+        id SERIAL PRIMARY KEY,
+        domain_id INTEGER REFERENCES domains(id) ON DELETE CASCADE,
+        selector VARCHAR(255) NOT NULL,
+        private_key TEXT NOT NULL,
+        public_key TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(domain_id, selector)
+      );
+
+      CREATE TABLE IF NOT EXISTS installation_state (
+        id SERIAL PRIMARY KEY,
+        step VARCHAR(255) NOT NULL,
+        status VARCHAR(50) NOT NULL,
+        firewall_rules_before TEXT,
+        firewall_rules_after TEXT,
+        ports_opened TEXT,
+        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP,
+        error_message TEXT
+      );
   become_user: postgres
 
 - name: Create powerdns database
