@@ -1,6 +1,9 @@
 # Fail2Ban filter for Postfix SASL authentication failures
 # Detects brute-force attempts on SMTP authentication
 
+[INCLUDES]
+before = common.conf
+
 [Definition]
 
 # Match SASL authentication failures
