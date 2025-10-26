@@ -1,25 +1,49 @@
 ---
+- name: Check if PostgreSQL cluster exists
+  stat:
+    path: /var/lib/postgresql/16/main/PG_VERSION
+  register: pg_cluster
+
+- name: Initialize PostgreSQL cluster if needed
+  command: /usr/bin/pg_createcluster 16 main --start
+  when: not pg_cluster.stat.exists
+  become: yes
+
 - name: Ensure PostgreSQL is enabled
   systemd:
     name: postgresql
     enabled: yes
 
-- name: Restart PostgreSQL to ensure clean state
+- name: Start PostgreSQL service
   systemd:
     name: postgresql
-    state: restarted
+    state: started
 
-- name: Wait for PostgreSQL to be ready
+- name: Wait a moment for PostgreSQL to initialize
+  pause:
+    seconds: 3
+
+- name: Check PostgreSQL service status
+  command: systemctl status postgresql
+  register: pg_status
+  failed_when: false
+  changed_when: false
+
+- name: Display PostgreSQL status
+  debug:
+    var: pg_status.stdout_lines
+
+- name: Wait for PostgreSQL socket
   wait_for:
     path: /var/run/postgresql/.s.PGSQL.5432
     timeout: 30
     state: present
 
 - name: Verify PostgreSQL is accepting connections
-  command: pg_isready
+  command: pg_isready -h localhost
   register: pg_ready
-  retries: 5
-  delay: 2
+  retries: 10
+  delay: 3
   until: pg_ready.rc == 0
   changed_when: false
 
