@@ -23,34 +23,38 @@
     name: postgresql
     enabled: yes
 
-- name: Start PostgreSQL cluster 16-main
-  command: pg_ctlcluster 16 main start
-  register: pg_start
+- name: Check if PostgreSQL cluster is running
+  shell: pg_lsclusters -h | grep "16.*main" | awk '{print $4}'
+  register: cluster_status
+  changed_when: false
   failed_when: false
-  changed_when: pg_start.rc == 0
 
-- name: Display cluster start result
+- name: Display initial cluster status
   debug:
-    var: pg_start
+    msg: "Cluster status: {{ cluster_status.stdout }}"
 
-- name: Ensure postgresql@16-main service is started
-  systemd:
-    name: postgresql@16-main
-    state: started
-    enabled: yes
+- name: Start PostgreSQL cluster if not running
+  command: pg_ctlcluster 16 main start
+  when: cluster_status.stdout != "online"
+  register: pg_start
 
-- name: Wait a moment for PostgreSQL to initialize
+- name: Restart PostgreSQL cluster if already running
+  command: pg_ctlcluster 16 main restart
+  when: cluster_status.stdout == "online"
+  register: pg_restart
+
+- name: Wait for PostgreSQL to be ready
   pause:
     seconds: 5
 
-- name: Check PostgreSQL cluster status
-  command: pg_lsclusters
-  register: pg_cluster_status
+- name: Verify cluster is now online
+  shell: pg_lsclusters -h | grep "16.*main"
+  register: final_cluster_status
   changed_when: false
 
-- name: Display cluster status
+- name: Display final cluster status
   debug:
-    var: pg_cluster_status.stdout_lines
+    var: final_cluster_status.stdout_lines
 
 - name: Wait for PostgreSQL socket
   wait_for:
