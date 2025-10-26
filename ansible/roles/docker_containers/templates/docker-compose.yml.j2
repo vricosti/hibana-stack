@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: hibana-traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/hibana/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - /etc/hibana/traefik/config:/etc/traefik/config:ro
+      - /etc/hibana/traefik/acme.json:/etc/traefik/acme.json
+    networks:
+      - hibana-network
+    labels:
+      - "traefik.enable=true"
+
+  www:
+    build: ./www
+    container_name: hibana-www
+    restart: unless-stopped
+    networks:
+      - hibana-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.www.rule=Host(`www.{{ primary_domain }}`, `{{ primary_domain }}`)"
+      - "traefik.http.routers.www.entrypoints=websecure"
+      - "traefik.http.routers.www.tls.certresolver=letsencrypt"
+      - "traefik.http.services.www.loadbalancer.server.port=80"
+
+  adm:
+    build: ./adm
+    container_name: hibana-adm
+    restart: unless-stopped
+    networks:
+      - hibana-network
+    environment:
+      - DOMAIN={{ primary_domain }}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adm.rule=Host(`adm.{{ primary_domain }}`)"
+      - "traefik.http.routers.adm.entrypoints=websecure"
+      - "traefik.http.routers.adm.tls.certresolver=letsencrypt"
+      - "traefik.http.services.adm.loadbalancer.server.port=80"
+
+  webmail:
+    image: roundcube/roundcubemail:latest
+    container_name: hibana-webmail
+    restart: unless-stopped
+    networks:
+      - hibana-network
+    environment:
+      - ROUNDCUBEMAIL_DEFAULT_HOST=mail.{{ primary_domain }}
+      - ROUNDCUBEMAIL_SMTP_SERVER=mail.{{ primary_domain }}
+      - ROUNDCUBEMAIL_DEFAULT_PORT=143
+      - ROUNDCUBEMAIL_SMTP_PORT=587
+      - ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=30M
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.webmail.rule=Host(`webmail.{{ primary_domain }}`)"
+      - "traefik.http.routers.webmail.entrypoints=websecure"
+      - "traefik.http.routers.webmail.tls.certresolver=letsencrypt"
+      - "traefik.http.services.webmail.loadbalancer.server.port=80"
+
+networks:
+  hibana-network:
+    external: true

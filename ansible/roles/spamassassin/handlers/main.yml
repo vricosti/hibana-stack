@@ -1,0 +1,15 @@
+---
+- name: Restart SpamAssassin
+  systemd:
+    name: spamd
+    state: restarted
+
+- name: Restart Postfix for SpamAssassin
+  systemd:
+    name: postfix
+    state: restarted
+
+- name: Restart Dovecot for Sieve
+  systemd:
+    name: dovecot
+    state: restarted

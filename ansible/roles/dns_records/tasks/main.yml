@@ -1,0 +1,216 @@
+---
+- name: Read pdns database password
+  slurp:
+    src: /etc/hibana/passwords/pdns
+  register: pdns_password_file
+
+- name: Set pdns password fact
+  set_fact:
+    pdns_db_password: "{{ pdns_password_file['content'] | b64decode | trim }}"
+
+- name: Read DKIM public key
+  slurp:
+    src: /etc/opendkim/keys/{{ primary_domain }}/default.txt
+  register: dkim_public_key_file
+  ignore_errors: yes
+
+- name: Extract DKIM public key value
+  set_fact:
+    dkim_public_key: "{{ dkim_public_key_file['content'] | b64decode | regex_search('p=([^;\"\\)]+)', '\\1') | first }}"
+  when: dkim_public_key_file is defined and not dkim_public_key_file.failed
+
+- name: Set empty DKIM key if not found
+  set_fact:
+    dkim_public_key: ""
+  when: dkim_public_key_file.failed is defined and dkim_public_key_file.failed
+
+- name: Generate SOA serial (YYYYMMDDnn format)
+  set_fact:
+    soa_serial: "{{ ansible_date_time.date | replace('-', '') }}01"
+
+- name: Check if domain exists in PowerDNS
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: "SELECT id FROM domains WHERE name = '{{ primary_domain }}'"
+  register: domain_check
+  become_user: postgres
+
+- name: Create domain in PowerDNS if not exists
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: "INSERT INTO domains (name, type) VALUES ('{{ primary_domain }}', 'MASTER') RETURNING id"
+  when: domain_check.rowcount == 0
+  register: domain_created
+  become_user: postgres
+
+- name: Update domain type to MASTER if NATIVE
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: "UPDATE domains SET type = 'MASTER' WHERE name = '{{ primary_domain }}' AND type = 'NATIVE'"
+  become_user: postgres
+
+- name: Get domain ID
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: "SELECT id FROM domains WHERE name = '{{ primary_domain }}'"
+  register: domain_id_result
+  become_user: postgres
+
+- name: Set domain ID fact
+  set_fact:
+    domain_id: "{{ domain_id_result.query_result[0].id }}"
+
+- name: Delete existing DNS records for idempotency
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: "DELETE FROM records WHERE domain_id = {{ domain_id }}"
+  become_user: postgres
+
+- name: Insert SOA record
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, '{{ primary_domain }}', 'SOA',
+              'ns1.{{ primary_domain }}. hostmaster.{{ primary_domain }}. {{ soa_serial }} 10800 3600 604800 3600',
+              86400, NULL)
+  become_user: postgres
+
+- name: Insert NS record
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, '{{ primary_domain }}', 'NS', 'ns1.{{ primary_domain }}.', 3600, NULL)
+  become_user: postgres
+
+- name: Insert A record for nameserver
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, 'ns1.{{ primary_domain }}', 'A', '{{ server_ip }}', 3600, NULL)
+  become_user: postgres
+
+- name: Insert A record for root domain
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, '{{ primary_domain }}', 'A', '{{ server_ip }}', 300, NULL)
+  become_user: postgres
+
+- name: Insert A records for subdomains
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, '{{ item }}.{{ primary_domain }}', 'A', '{{ server_ip }}', 300, NULL)
+  loop:
+    - mail
+    - webmail
+    - adm
+    - www
+  become_user: postgres
+
+- name: Insert CNAME for www
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, 'www.{{ primary_domain }}', 'CNAME', '{{ primary_domain }}.', 300, NULL)
+  become_user: postgres
+
+- name: Insert MX record
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, '{{ primary_domain }}', 'MX', 'mail.{{ primary_domain }}', 14400, 10)
+  become_user: postgres
+
+- name: Insert SPF TXT record
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, '{{ primary_domain }}', 'TXT', 'v=spf1 ip4:{{ server_ip }} -all', 14400, NULL)
+  become_user: postgres
+
+- name: Insert DMARC TXT record
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, '_dmarc.{{ primary_domain }}', 'TXT',
+              'v=DMARC1; p=none; rua=mailto:dmarc@{{ primary_domain }}', 3600, NULL)
+  become_user: postgres
+
+- name: Insert CAA records for Let's Encrypt
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, '{{ primary_domain }}', 'CAA', '{{ item }}', 14400, NULL)
+  loop:
+    - '0 issue "letsencrypt.org"'
+    - '0 issuewild "letsencrypt.org"'
+  become_user: postgres
+
+- name: Insert DKIM TXT record
+  postgresql_query:
+    db: powerdns
+    login_user: pdns
+    login_password: "{{ pdns_db_password }}"
+    login_host: localhost
+    query: >
+      INSERT INTO records (domain_id, name, type, content, ttl, prio)
+      VALUES ({{ domain_id }}, 'default._domainkey.{{ primary_domain }}', 'TXT',
+              'v=DKIM1; h=sha256; k=rsa; p={{ dkim_public_key }}', 14400, NULL)
+  when: dkim_public_key is defined and dkim_public_key != ""
+  become_user: postgres

@@ -1,0 +1,52 @@
+---
+- name: Create system users
+  user:
+    name: "{{ item.username }}"
+    comment: "{{ item.name }}"
+    shell: /bin/bash
+    create_home: yes
+    state: present
+  loop: "{{ system_users }}"
+  when: system_users is defined
+
+- name: Set user passwords
+  user:
+    name: "{{ item.username }}"
+    password: "{{ item.password | password_hash('sha512') }}"
+  loop: "{{ system_users }}"
+  when: system_users is defined
+  no_log: true
+
+- name: Add users to sudo group
+  user:
+    name: "{{ item.username }}"
+    groups: sudo
+    append: yes
+  loop: "{{ system_users }}"
+  when:
+    - system_users is defined
+    - item.sudoers | default(false)
+
+- name: Create .ssh directory
+  file:
+    path: "/home/{{ item.username }}/.ssh"
+    state: directory
+    owner: "{{ item.username }}"
+    group: "{{ item.username }}"
+    mode: '0700'
+  loop: "{{ system_users }}"
+  when:
+    - system_users is defined
+    - item.ssh_pub_key is defined
+    - item.ssh_pub_key != ""
+
+- name: Add SSH public keys
+  authorized_key:
+    user: "{{ item.username }}"
+    key: "{{ item.ssh_pub_key }}"
+    state: present
+  loop: "{{ system_users }}"
+  when:
+    - system_users is defined
+    - item.ssh_pub_key is defined
+    - item.ssh_pub_key != ""

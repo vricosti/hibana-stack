@@ -1,0 +1,45 @@
+---
+- name: Open firewall ports for web (HTTP)
+  ufw:
+    rule: allow
+    port: '80'
+    proto: tcp
+  when: ansible_facts.services['ufw.service'] is defined
+
+- name: Open firewall ports for web (HTTPS)
+  ufw:
+    rule: allow
+    port: '443'
+    proto: tcp
+  when: ansible_facts.services['ufw.service'] is defined
+
+- name: Create Traefik directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/hibana/traefik
+    - /etc/hibana/traefik/config
+
+- name: Create acme.json for Let's Encrypt
+  file:
+    path: /etc/hibana/traefik/acme.json
+    state: touch
+    mode: '0600'
+
+- name: Configure Traefik static configuration
+  template:
+    src: traefik.yml.j2
+    dest: /etc/hibana/traefik/traefik.yml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Configure Traefik dynamic configuration
+  copy:
+    src: dynamic.yml
+    dest: /etc/hibana/traefik/config/dynamic.yml
+    owner: root
+    group: root
+    mode: '0644'

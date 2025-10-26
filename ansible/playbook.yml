@@ -1,0 +1,51 @@
+---
+- name: Setup Hibana Stack
+  hosts: hibana_server
+  become: yes
+  gather_facts: yes
+
+  roles:
+    - role: prerequisites
+      tags: [prerequisites, always]
+
+    - role: system_users
+      tags: [users]
+      when: system_users is defined
+
+    - role: postgresql
+      tags: [postgresql, database]
+
+    - role: powerdns
+      tags: [powerdns, dns]
+
+    - role: mail_server
+      tags: [mail, postfix, dovecot]
+
+    - role: dkim
+      tags: [mail, dkim, security]
+
+    - role: spamassassin
+      tags: [mail, spam]
+
+    - role: dns_records
+      tags: [dns, records]
+
+    - role: traefik
+      tags: [traefik, proxy]
+
+    - role: docker_containers
+      tags: [docker, containers, web]
+
+  post_tasks:
+    - name: Display installation summary
+      debug:
+        msg: |
+          ✅ Hibana Stack installation complete!
+
+          Your services are now available at:
+            • Web admin:  https://adm.{{ primary_domain }}
+            • Webmail:    https://webmail.{{ primary_domain }}
+            • Website:    https://www.{{ primary_domain }}
+            • Mail:       mail.{{ primary_domain }}
+
+          Don't forget to update your domain's nameservers to point to this server!

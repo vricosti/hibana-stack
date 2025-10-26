@@ -1,0 +1,16 @@
+---
+- name: Restart Postfix
+  systemd:
+    name: postfix
+    state: restarted
+
+- name: Restart Dovecot
+  systemd:
+    name: dovecot
+    state: restarted
+
+- name: Rebuild Postfix maps
+  command: postmap {{ item }}
+  loop:
+    - /etc/postfix/vmailbox
+    - /etc/postfix/virtual

@@ -1,0 +1,122 @@
+---
+- name: Create spamd user
+  user:
+    name: spamd
+    system: yes
+    home: /var/lib/spamassassin
+    shell: /bin/false
+    create_home: yes
+    state: present
+
+- name: Configure SpamAssassin local.cf
+  template:
+    src: local.cf.j2
+    dest: /etc/spamassassin/local.cf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart SpamAssassin
+
+- name: Configure SpamAssassin daemon options
+  copy:
+    src: spamassassin-default
+    dest: /etc/default/spamassassin
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart SpamAssassin
+
+- name: Update SpamAssassin rules
+  command: sa-update
+  register: sa_update_result
+  failed_when: false
+  changed_when: sa_update_result.rc == 0
+
+- name: Add SpamAssassin content filter to Postfix main.cf
+  lineinfile:
+    path: /etc/postfix/main.cf
+    line: "content_filter = spamassassin"
+    regexp: "^content_filter"
+    state: present
+  notify: Restart Postfix for SpamAssassin
+
+- name: Add SpamAssassin service to Postfix master.cf
+  blockinfile:
+    path: /etc/postfix/master.cf
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - SpamAssassin"
+    block: |
+      # SpamAssassin filter
+      spamassassin unix -     n       n       -       -       pipe
+        user=spamd argv=/usr/bin/spamc -f -e /usr/sbin/sendmail -oi -f ${sender} ${recipient}
+  notify: Restart Postfix for SpamAssassin
+
+- name: Add Sieve configuration to Dovecot
+  blockinfile:
+    path: /etc/dovecot/dovecot.conf
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - Sieve"
+    block: |
+      # Sieve filtering
+      protocol lmtp {
+        mail_plugins = $mail_plugins sieve
+      }
+
+      plugin {
+        sieve = file:~/sieve;active=~/.dovecot.sieve
+        sieve_default = /var/lib/dovecot/sieve/default.sieve
+        sieve_default_name = main
+      }
+  notify: Restart Dovecot for Sieve
+
+- name: Create Sieve directory
+  file:
+    path: /var/lib/dovecot/sieve
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install default Sieve script
+  copy:
+    src: default.sieve
+    dest: /var/lib/dovecot/sieve/default.sieve
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Compile default Sieve script
+  command: sievec /var/lib/dovecot/sieve/default.sieve
+  args:
+    creates: /var/lib/dovecot/sieve/default.svbin
+
+- name: Create per-user Sieve directories
+  file:
+    path: /var/mail/vhosts/{{ primary_domain }}/{{ item.username }}/sieve
+    state: directory
+    owner: vmail
+    group: vmail
+    mode: '0770'
+  loop: "{{ email_accounts }}"
+  when: email_accounts is defined
+
+- name: Install per-user Sieve scripts
+  copy:
+    src: default.sieve
+    dest: /var/mail/vhosts/{{ primary_domain }}/{{ item.username }}/sieve/spam-filter.sieve
+    owner: vmail
+    group: vmail
+    mode: '0644'
+  loop: "{{ email_accounts }}"
+  when: email_accounts is defined
+
+- name: Compile per-user Sieve scripts
+  command: sievec /var/mail/vhosts/{{ primary_domain }}/{{ item.username }}/sieve/spam-filter.sieve
+  args:
+    creates: /var/mail/vhosts/{{ primary_domain }}/{{ item.username }}/sieve/spam-filter.svbin
+  loop: "{{ email_accounts }}"
+  when: email_accounts is defined
+
+- name: Ensure SpamAssassin is enabled and started
+  systemd:
+    name: spamd
+    state: started
+    enabled: yes

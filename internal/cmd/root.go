@@ -5,6 +5,7 @@ import (
 )
 
 var cfgFile string
+var verbose bool
 
 var rootCmd = &cobra.Command{
 	Use:   "hibana",
@@ -22,4 +23,5 @@ func Execute() error {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./hibana-config.yaml)")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output (Ansible -vvv)")
 }

@@ -1,0 +1,3 @@
+{% for account in email_accounts %}
+{{ account.username }}@{{ primary_domain }}:{{ account.password | password_hash('sha512') }}
+{% endfor %}

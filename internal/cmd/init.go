@@ -5,9 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/vricosti/hibana-stack/internal/ansible"
 	"github.com/vricosti/hibana-stack/internal/config"
-	"github.com/vricosti/hibana-stack/internal/installer"
-	"github.com/vricosti/hibana-stack/internal/system"
 	"gopkg.in/yaml.v3"
 )
 
@@ -23,7 +22,7 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	fmt.Println("🚀 Hibana Stack Installer")
+	fmt.Println("🚀 Hibana Stack Installer (Ansible)")
 	fmt.Println("=" + string(make([]byte, 50)))
 	fmt.Println()
 
@@ -58,145 +57,77 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("✓ Configuration loaded for domain: %s\n", cfg.PrimaryDomain)
 
-	// Check if running as root (required for actual installation)
+	// Step 2: Check if running as root
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("installation must be run as root (use sudo)")
 	}
 
-	// Step 2: Fix /etc/hosts to avoid DNS resolution delays
-	if err := system.FixHostsFile(); err != nil {
-		fmt.Printf("⚠️  Warning: failed to update /etc/hosts: %v\n", err)
-		// Continue anyway, this is not critical
+	// Step 3: Check Ansible installation
+	fmt.Println("\n📋 Checking Ansible installation...")
+	if err := ansible.CheckAnsibleInstalled(); err != nil {
+		fmt.Printf("⚠️  Ansible is not installed\n\n")
+
+		// Install Ansible automatically
+		if err := ansible.InstallAnsible(); err != nil {
+			fmt.Println("\n" + ansible.InstallInstructions())
+			return fmt.Errorf("failed to install ansible: %w", err)
+		}
+
+		// Verify installation
+		if err := ansible.CheckAnsibleInstalled(); err != nil {
+			return fmt.Errorf("ansible installation verification failed: %w", err)
+		}
 	}
 
-	// Step 3: Check Ubuntu version
-	fmt.Println("\n📋 Checking system requirements...")
-	if err := system.CheckUbuntuVersion(); err != nil {
-		return fmt.Errorf("system check failed: %w", err)
-	}
-	fmt.Println("✓ Ubuntu 24.04 detected")
+	version, _ := ansible.GetAnsibleVersion()
+	fmt.Printf("✓ Ansible %s detected\n", version)
 
-	// Step 4: Check required packages
-	fmt.Println("\n📦 Checking required packages...")
-	missing, err := system.CheckRequiredPackages()
+	// Step 4: Create Ansible workspace
+	fmt.Println("\n📂 Creating Ansible workspace...")
+	workspaceDir, err := ansible.CreateWorkspace()
 	if err != nil {
-		return fmt.Errorf("package check failed: %w", err)
+		return fmt.Errorf("failed to create workspace: %w", err)
 	}
+	defer os.RemoveAll(workspaceDir) // Cleanup on exit
 
-	if len(missing) > 0 {
-		// Check if pdns-server needs to be installed - if so, disable systemd-resolved first
-		needsPowerDNS := false
-		for _, pkg := range missing {
-			if pkg == "pdns-server" {
-				needsPowerDNS = true
-				break
-			}
-		}
+	fmt.Printf("✓ Workspace created: %s\n", workspaceDir)
 
-		if needsPowerDNS {
-			fmt.Println("\n🔄 Disabling systemd-resolved to free port 53 for PowerDNS...")
-			if err := system.DisableSystemdResolved(); err != nil {
-				return fmt.Errorf("failed to disable systemd-resolved: %w", err)
-			}
-			fmt.Println("✓ systemd-resolved disabled")
-		}
-
-		fmt.Println("\n⚠️  Missing packages detected. Installing...")
-		if err := system.InstallPackages(missing, cfg.PrimaryDomain); err != nil {
-			return fmt.Errorf("package installation failed: %w", err)
-		}
-		fmt.Println("✓ All packages installed")
-	} else {
-		fmt.Println("✓ All required packages are installed")
+	// Step 5: Generate inventory
+	fmt.Println("\n📝 Generating Ansible inventory...")
+	if err := ansible.GenerateInventory(cfg, workspaceDir); err != nil {
+		return fmt.Errorf("failed to generate inventory: %w", err)
 	}
+	fmt.Println("✓ Inventory generated")
 
-	// Step 5: Initialize installer
-	inst := installer.New(cfg)
-
-	// Step 6: Setup System Users
-	if len(cfg.SystemUsers) > 0 {
-		fmt.Println("\n👤 Setting up system users...")
-		if err := inst.SetupSystemUsers(); err != nil {
-			return fmt.Errorf("system users setup failed: %w", err)
-		}
-		fmt.Println("✓ System users configured")
+	// Step 6: Generate group variables
+	fmt.Println("\n📝 Generating Ansible variables from configuration...")
+	if err := ansible.GenerateGroupVars(cfg, workspaceDir); err != nil {
+		return fmt.Errorf("failed to generate group vars: %w", err)
 	}
+	fmt.Println("✓ Variables generated")
 
-	// Step 7: Setup PostgreSQL
-	fmt.Println("\n🗄️  Setting up PostgreSQL...")
-	if err := inst.SetupPostgreSQL(); err != nil {
-		return fmt.Errorf("PostgreSQL setup failed: %w", err)
+	// Step 7: Copy Ansible roles
+	fmt.Println("\n📦 Copying Ansible roles...")
+	if err := ansible.CopyRoles(workspaceDir); err != nil {
+		return fmt.Errorf("failed to copy roles: %w", err)
 	}
-	fmt.Println("✓ PostgreSQL configured")
+	fmt.Println("✓ Roles copied")
 
-	// Step 8: Setup PowerDNS
-	fmt.Println("\n🌐 Setting up PowerDNS...")
-	if err := inst.SetupPowerDNS(); err != nil {
-		return fmt.Errorf("PowerDNS setup failed: %w", err)
+	// Step 8: Copy playbook
+	fmt.Println("\n📋 Copying Ansible playbook...")
+	if err := ansible.CopyPlaybook(workspaceDir); err != nil {
+		return fmt.Errorf("failed to copy playbook: %w", err)
 	}
-	fmt.Println("✓ PowerDNS configured")
+	fmt.Println("✓ Playbook copied")
 
-	// Step 9: Setup Mail Server
-	fmt.Println("\n📧 Setting up mail server (Postfix/Dovecot)...")
-	if err := inst.SetupMailServer(); err != nil {
-		return fmt.Errorf("mail server setup failed: %w", err)
-	}
-	fmt.Println("✓ Mail server configured")
+	// Step 9: Execute ansible-playbook
+	fmt.Println("\n🚀 Executing Ansible playbook...")
+	fmt.Println(string(make([]byte, 80)))
 
-	// Step 10: Setup DKIM and DMARC
-	fmt.Println("\n🔐 Setting up DKIM and DMARC...")
-	if err := inst.SetupDKIM(); err != nil {
-		return fmt.Errorf("DKIM/DMARC setup failed: %w", err)
-	}
-	fmt.Println("✓ DKIM and DMARC configured")
-
-	// Step 11: Setup SpamAssassin
-	fmt.Println("\n🛡️  Setting up SpamAssassin anti-spam filter...")
-	if err := inst.SetupSpamAssassin(); err != nil {
-		return fmt.Errorf("SpamAssassin setup failed: %w", err)
-	}
-	fmt.Println("✓ SpamAssassin configured")
-
-	// Step 12: Configure DNS records
-	fmt.Println("\n📝 Adding DNS records to PowerDNS...")
-	if err := inst.ConfigureDNSRecords(); err != nil {
-		return fmt.Errorf("DNS configuration failed: %w", err)
-	}
-	fmt.Println("✓ DNS records configured")
-
-	// Step 13: Setup Traefik
-	fmt.Println("\n🔀 Setting up Traefik reverse proxy...")
-	if err := inst.SetupTraefik(); err != nil {
-		return fmt.Errorf("Traefik setup failed: %w", err)
-	}
-	fmt.Println("✓ Traefik configured")
-
-	// Step 14: Deploy Docker containers
-	fmt.Println("\n🐳 Deploying Docker containers...")
-	if err := inst.DeployContainers(); err != nil {
-		return fmt.Errorf("container deployment failed: %w", err)
-	}
-	fmt.Println("✓ Containers deployed")
-
-	// Step 15: Test email
-	fmt.Println("\n✉️  Testing email functionality...")
-	if err := inst.TestEmail(); err != nil {
-		fmt.Printf("⚠️  Email test failed: %v\n", err)
-		fmt.Println("   You may need to check your configuration manually")
-	} else {
-		fmt.Println("✓ Email test successful")
-	}
-
-	// Step 16: Generate and display credentials summary
-	fmt.Println("\n🔐 Generating credentials summary...")
-	credentialsSummary, err := inst.GetCredentialsSummary()
-	if err != nil {
-		fmt.Printf("⚠️  Failed to generate credentials summary: %v\n", err)
-	} else {
-		if err := inst.SaveCredentialsSummary(credentialsSummary); err != nil {
-			fmt.Printf("⚠️  Failed to save credentials summary: %v\n", err)
-		}
-		inst.DisplayCredentialsSummary(credentialsSummary)
+	if err := ansible.ExecutePlaybook(workspaceDir, verbose); err != nil {
+		fmt.Println("\n" + string(make([]byte, 80)))
+		fmt.Println("❌ Ansible playbook execution failed!")
+		return fmt.Errorf("playbook execution failed: %w", err)
 	}
 
 	// Final summary

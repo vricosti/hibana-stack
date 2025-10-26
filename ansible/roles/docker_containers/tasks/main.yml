@@ -1,0 +1,74 @@
+---
+- name: Create Docker directory
+  file:
+    path: /etc/hibana/docker
+    state: directory
+    mode: '0755'
+
+- name: Create Docker network
+  docker_network:
+    name: hibana-network
+    state: present
+
+- name: Create www container directory
+  file:
+    path: /etc/hibana/docker/www
+    state: directory
+    mode: '0755'
+
+- name: Create adm container directory
+  file:
+    path: /etc/hibana/docker/adm
+    state: directory
+    mode: '0755'
+
+- name: Copy www Dockerfile
+  copy:
+    src: www-Dockerfile
+    dest: /etc/hibana/docker/www/Dockerfile
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create www index.html
+  template:
+    src: www-index.html.j2
+    dest: /etc/hibana/docker/www/index.html
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Copy adm Dockerfile
+  copy:
+    src: adm-Dockerfile
+    dest: /etc/hibana/docker/adm/Dockerfile
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create adm index.html
+  template:
+    src: adm-index.html.j2
+    dest: /etc/hibana/docker/adm/index.html
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create docker-compose file
+  template:
+    src: docker-compose.yml.j2
+    dest: /etc/hibana/docker/docker-compose.yml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Start Docker containers with docker-compose
+  docker_compose:
+    project_src: /etc/hibana/docker
+    build: yes
+    state: present
+  register: docker_compose_result
+
+- name: Display Docker compose result
+  debug:
+    var: docker_compose_result

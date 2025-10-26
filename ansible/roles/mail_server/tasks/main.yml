@@ -1,0 +1,205 @@
+---
+- name: Open firewall ports for mail (SMTP)
+  ufw:
+    rule: allow
+    port: '25'
+    proto: tcp
+  when: ansible_facts.services['ufw.service'] is defined
+
+- name: Open firewall ports for mail (Submission)
+  ufw:
+    rule: allow
+    port: '587'
+    proto: tcp
+  when: ansible_facts.services['ufw.service'] is defined
+
+- name: Open firewall ports for mail (SMTPS)
+  ufw:
+    rule: allow
+    port: '465'
+    proto: tcp
+  when: ansible_facts.services['ufw.service'] is defined
+
+- name: Open firewall ports for mail (IMAPS)
+  ufw:
+    rule: allow
+    port: '993'
+    proto: tcp
+  when: ansible_facts.services['ufw.service'] is defined
+
+- name: Open firewall ports for mail (POP3S)
+  ufw:
+    rule: allow
+    port: '995'
+    proto: tcp
+  when: ansible_facts.services['ufw.service'] is defined
+
+- name: Set hostname to mail.{{ primary_domain }}
+  hostname:
+    name: mail.{{ primary_domain }}
+
+- name: Create /etc/ssl/private directory
+  file:
+    path: /etc/ssl/private
+    state: directory
+    mode: '0700'
+
+- name: Check if self-signed certificate exists
+  stat:
+    path: /etc/ssl/certs/hibana-{{ primary_domain }}.crt
+  register: ssl_cert
+
+- name: Generate self-signed SSL certificate
+  command: >
+    openssl req -x509 -nodes
+    -days 365
+    -newkey rsa:2048
+    -keyout /etc/ssl/private/hibana-{{ primary_domain }}.key
+    -out /etc/ssl/certs/hibana-{{ primary_domain }}.crt
+    -subj "/C=US/ST=State/L=City/O=Hibana/CN={{ primary_domain }}"
+  when: not ssl_cert.stat.exists
+
+- name: Set proper permissions on SSL private key
+  file:
+    path: /etc/ssl/private/hibana-{{ primary_domain }}.key
+    mode: '0600'
+
+- name: Create vmail group
+  group:
+    name: vmail
+    gid: 5000
+    state: present
+
+- name: Create vmail user
+  user:
+    name: vmail
+    uid: 5000
+    group: vmail
+    home: /var/mail
+    shell: /usr/sbin/nologin
+    create_home: no
+    state: present
+
+- name: Create mail directory structure
+  file:
+    path: /var/mail/vhosts/{{ primary_domain }}
+    state: directory
+    owner: vmail
+    group: vmail
+    mode: '0770'
+
+- name: Configure Postfix main.cf
+  template:
+    src: postfix-main.cf.j2
+    dest: /etc/postfix/main.cf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Postfix
+
+- name: Configure Postfix master.cf
+  template:
+    src: postfix-master.cf.j2
+    dest: /etc/postfix/master.cf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Postfix
+
+- name: Configure Dovecot
+  template:
+    src: dovecot.conf.j2
+    dest: /etc/dovecot/dovecot.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Dovecot
+
+- name: Create Dovecot users file
+  template:
+    src: dovecot-users.j2
+    dest: /etc/dovecot/users
+    owner: root
+    group: root
+    mode: '0600'
+  notify: Restart Dovecot
+
+- name: Create Postfix virtual mailbox file
+  template:
+    src: postfix-vmailbox.j2
+    dest: /etc/postfix/vmailbox
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Rebuild Postfix maps
+
+- name: Create Postfix virtual alias file
+  copy:
+    content: ""
+    dest: /etc/postfix/virtual
+    owner: root
+    group: root
+    mode: '0644'
+    force: no
+
+- name: Build Postfix vmailbox map
+  command: postmap /etc/postfix/vmailbox
+
+- name: Build Postfix virtual map
+  command: postmap /etc/postfix/virtual
+
+- name: Create mailbox directories for email accounts
+  file:
+    path: /var/mail/vhosts/{{ primary_domain }}/{{ item.username }}
+    state: directory
+    owner: vmail
+    group: vmail
+    mode: '0770'
+  loop: "{{ email_accounts }}"
+  when: email_accounts is defined
+
+- name: Read hibana database password
+  slurp:
+    src: /etc/hibana/passwords/hibana
+  register: hibana_password_file
+
+- name: Set hibana password fact
+  set_fact:
+    hibana_db_password: "{{ hibana_password_file['content'] | b64decode | trim }}"
+
+- name: Store email accounts in Hibana database
+  postgresql_query:
+    db: hibana
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    login_host: localhost
+    query: |
+      WITH domain_cte AS (
+        SELECT id FROM domains WHERE name = '{{ primary_domain }}'
+      )
+      INSERT INTO email_accounts (domain_id, username, password_hash, full_name)
+      VALUES (
+        (SELECT id FROM domain_cte),
+        '{{ item.username }}',
+        '{{ item.password | password_hash("sha512") }}',
+        '{{ item.full_name | default("") }}'
+      )
+      ON CONFLICT (domain_id, username) DO UPDATE
+      SET password_hash = EXCLUDED.password_hash,
+          full_name = EXCLUDED.full_name
+  loop: "{{ email_accounts }}"
+  when: email_accounts is defined
+  become_user: postgres
+  no_log: true
+
+- name: Ensure Postfix is enabled and started
+  systemd:
+    name: postfix
+    state: started
+    enabled: yes
+
+- name: Ensure Dovecot is enabled and started
+  systemd:
+    name: dovecot
+    state: started
+    enabled: yes

@@ -1,0 +1,135 @@
+---
+- name: Create OpenDKIM keys directory
+  file:
+    path: /etc/opendkim/keys/{{ primary_domain }}
+    state: directory
+    owner: opendkim
+    group: opendkim
+    mode: '0750'
+
+- name: Check if DKIM private key exists
+  stat:
+    path: /etc/opendkim/keys/{{ primary_domain }}/default.private
+  register: dkim_private_key
+
+- name: Generate DKIM keys
+  command: >
+    opendkim-genkey
+    -b 2048
+    -d {{ primary_domain }}
+    -s default
+    -D /etc/opendkim/keys/{{ primary_domain }}
+  when: not dkim_private_key.stat.exists
+
+- name: Set proper permissions on DKIM keys
+  file:
+    path: /etc/opendkim/keys
+    owner: opendkim
+    group: opendkim
+    recurse: yes
+    state: directory
+
+- name: Configure OpenDKIM main config
+  template:
+    src: opendkim.conf.j2
+    dest: /etc/opendkim.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart OpenDKIM
+
+- name: Configure OpenDKIM key table
+  template:
+    src: key.table.j2
+    dest: /etc/opendkim/key.table
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart OpenDKIM
+
+- name: Configure OpenDKIM signing table
+  template:
+    src: signing.table.j2
+    dest: /etc/opendkim/signing.table
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart OpenDKIM
+
+- name: Configure OpenDKIM trusted hosts
+  template:
+    src: trusted.hosts.j2
+    dest: /etc/opendkim/trusted.hosts
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart OpenDKIM
+
+- name: Create OpenDKIM runtime directory
+  file:
+    path: /run/opendkim
+    state: directory
+    owner: opendkim
+    group: opendkim
+    mode: '0750'
+
+- name: Add postfix user to opendkim group
+  user:
+    name: postfix
+    groups: opendkim
+    append: yes
+
+- name: Ensure OpenDKIM is enabled and started
+  systemd:
+    name: opendkim
+    state: started
+    enabled: yes
+
+- name: Read DKIM public key
+  slurp:
+    src: /etc/opendkim/keys/{{ primary_domain }}/default.txt
+  register: dkim_public_key_file
+
+- name: Extract DKIM public key value
+  set_fact:
+    dkim_public_key_raw: "{{ dkim_public_key_file['content'] | b64decode }}"
+
+- name: Parse DKIM public key
+  set_fact:
+    dkim_public_key: "{{ dkim_public_key_raw | regex_search('p=([^;\"\\)]+)', '\\1') | first }}"
+
+- name: Read DKIM private key
+  slurp:
+    src: /etc/opendkim/keys/{{ primary_domain }}/default.private
+  register: dkim_private_key_file
+
+- name: Read hibana database password
+  slurp:
+    src: /etc/hibana/passwords/hibana
+  register: hibana_password_file
+
+- name: Set hibana password fact
+  set_fact:
+    hibana_db_password: "{{ hibana_password_file['content'] | b64decode | trim }}"
+
+- name: Store DKIM keys in Hibana database
+  postgresql_query:
+    db: hibana
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    login_host: localhost
+    query: |
+      WITH domain_cte AS (
+        SELECT id FROM domains WHERE name = '{{ primary_domain }}'
+      )
+      INSERT INTO dkim_keys (domain_id, selector, private_key, public_key)
+      VALUES (
+        (SELECT id FROM domain_cte),
+        'default',
+        '{{ dkim_private_key_file["content"] | b64decode }}',
+        '{{ dkim_public_key }}'
+      )
+      ON CONFLICT (domain_id, selector) DO UPDATE
+      SET private_key = EXCLUDED.private_key,
+          public_key = EXCLUDED.public_key
+  become_user: postgres
