@@ -29,6 +29,7 @@
     - pdns
     - spamd
     - docker
+    - fail2ban
   ignore_errors: yes
 
 - name: Remove immutable flag from resolv.conf
@@ -72,6 +73,8 @@
       - mailutils
       - spamassassin
       - spamc
+      - fail2ban
+      - python3-systemd
       - docker.io
       - docker-compose
       - postgresql
@@ -120,6 +123,13 @@
     - /run/opendkim
     - /var/lib/postgresql
     - /etc/letsencrypt
+    - /etc/fail2ban
+  ignore_errors: yes
+
+- name: Remove Fail2Ban logs
+  file:
+    path: /var/log/fail2ban.log
+    state: absent
   ignore_errors: yes
 
 - name: Remove SSL certificates

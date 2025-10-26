@@ -27,6 +27,9 @@
     - role: spamassassin
       tags: [mail, spam]
 
+    - role: fail2ban
+      tags: [security, fail2ban]
+
     - role: dns_records
       tags: [dns, records]
 

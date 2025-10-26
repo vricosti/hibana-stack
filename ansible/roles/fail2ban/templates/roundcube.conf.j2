@@ -1,0 +1,13 @@
+# Fail2Ban filter for Roundcube webmail
+# Detects failed login attempts
+
+[Definition]
+
+# Match failed login attempts in Roundcube logs
+failregex = ^.*IMAP Error: Login failed for .* from <HOST>.*$
+            ^.*Failed login for .* from <HOST>.*$
+            ^<HOST> .* "POST .*\?_task=login.*" 401 .*$
+
+ignoreregex =
+
+# Author: Hibana Stack

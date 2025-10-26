@@ -1,0 +1,50 @@
+---
+- name: Install Fail2Ban
+  apt:
+    name:
+      - fail2ban
+      - python3-systemd
+    state: present
+    update_cache: yes
+
+- name: Create Fail2Ban local configuration
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Fail2Ban
+
+- name: Create Roundcube filter
+  template:
+    src: roundcube.conf.j2
+    dest: /etc/fail2ban/filter.d/roundcube.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Fail2Ban
+
+- name: Create Postfix SASL filter
+  template:
+    src: postfix-sasl.conf.j2
+    dest: /etc/fail2ban/filter.d/postfix-sasl.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Fail2Ban
+
+- name: Ensure Fail2Ban is enabled and started
+  systemd:
+    name: fail2ban
+    enabled: yes
+    state: started
+
+- name: Display Fail2Ban status
+  command: fail2ban-client status
+  register: fail2ban_status
+  changed_when: false
+
+- name: Show active jails
+  debug:
+    var: fail2ban_status.stdout_lines
