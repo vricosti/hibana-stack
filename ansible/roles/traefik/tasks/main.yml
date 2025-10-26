@@ -30,8 +30,8 @@
 
 - name: Configure Traefik static configuration
   template:
-    src: traefik.yml.j2
-    dest: /etc/hibana/traefik/traefik.yml
+    src: traefik.toml.j2
+    dest: /etc/hibana/traefik/traefik.toml
     owner: root
     group: root
     mode: '0644'

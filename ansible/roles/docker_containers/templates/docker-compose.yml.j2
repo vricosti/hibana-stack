@@ -10,7 +10,7 @@ services:
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /etc/hibana/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - /etc/hibana/traefik/traefik.toml:/etc/traefik/traefik.toml:ro
       - /etc/hibana/traefik/config:/etc/traefik/config:ro
       - /etc/hibana/traefik/acme.json:/etc/traefik/acme.json
     networks:

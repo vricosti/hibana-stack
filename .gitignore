@@ -44,3 +44,5 @@ hibana-config.yaml
 .DS_Store
 Thumbs.db
 PROMPT.*
+
+passwd
