@@ -23,24 +23,34 @@
     name: postgresql
     enabled: yes
 
-- name: Start PostgreSQL service
+- name: Start PostgreSQL cluster 16-main
+  command: pg_ctlcluster 16 main start
+  register: pg_start
+  failed_when: false
+  changed_when: pg_start.rc == 0
+
+- name: Display cluster start result
+  debug:
+    var: pg_start
+
+- name: Ensure postgresql@16-main service is started
   systemd:
-    name: postgresql
+    name: postgresql@16-main
     state: started
+    enabled: yes
 
 - name: Wait a moment for PostgreSQL to initialize
   pause:
-    seconds: 3
+    seconds: 5
 
-- name: Check PostgreSQL service status
-  command: systemctl status postgresql
-  register: pg_status
-  failed_when: false
+- name: Check PostgreSQL cluster status
+  command: pg_lsclusters
+  register: pg_cluster_status
   changed_when: false
 
-- name: Display PostgreSQL status
+- name: Display cluster status
   debug:
-    var: pg_status.stdout_lines
+    var: pg_cluster_status.stdout_lines
 
 - name: Wait for PostgreSQL socket
   wait_for:
