@@ -257,6 +257,14 @@
         secret VARCHAR(255)
       );
       CREATE INDEX IF NOT EXISTS namealgoindex ON tsigkeys(name, algorithm);
+
+      -- Grant all privileges to pdns user
+      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pdns;
+      GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pdns;
+
+      -- Set default privileges for future tables
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO pdns;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO pdns;
   become_user: postgres
 
 - name: Store passwords securely
