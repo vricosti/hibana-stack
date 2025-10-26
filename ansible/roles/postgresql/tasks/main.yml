@@ -44,6 +44,13 @@
     groups: ssl-cert
     append: yes
 
+- name: Ensure ssl-cert-snakeoil.key has correct permissions
+  file:
+    path: /etc/ssl/private/ssl-cert-snakeoil.key
+    owner: root
+    group: ssl-cert
+    mode: '0640'
+
 - name: Check if PostgreSQL cluster is running
   shell: pg_lsclusters -h | grep "16.*main" | awk '{print $4}'
   register: cluster_status
