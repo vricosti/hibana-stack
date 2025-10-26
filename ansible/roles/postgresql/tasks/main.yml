@@ -38,6 +38,12 @@
     name: postgresql
     enabled: yes
 
+- name: Add postgres user to ssl-cert group
+  user:
+    name: postgres
+    groups: ssl-cert
+    append: yes
+
 - name: Check if PostgreSQL cluster is running
   shell: pg_lsclusters -h | grep "16.*main" | awk '{print $4}'
   register: cluster_status
