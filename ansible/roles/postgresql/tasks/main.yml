@@ -1,5 +1,10 @@
 ---
-- name: Check if PostgreSQL cluster exists
+- name: Check if PostgreSQL data directory exists
+  stat:
+    path: /var/lib/postgresql/16/main
+  register: pg_datadir
+
+- name: Check if PostgreSQL cluster is registered
   command: pg_lsclusters -h
   register: pg_clusters
   failed_when: false
@@ -9,14 +14,24 @@
   debug:
     var: pg_clusters.stdout_lines
 
-- name: Check if main cluster exists
+- name: Check if main cluster is registered
   set_fact:
-    cluster_exists: "{{ pg_clusters.stdout | regex_search('16\\s+main') is not none }}"
+    cluster_registered: "{{ pg_clusters.stdout | regex_search('16\\s+main') is not none }}"
 
-- name: Initialize PostgreSQL cluster if needed
-  command: /usr/bin/pg_createcluster 16 main --start
-  when: not cluster_exists
-  become: yes
+- name: Remove broken cluster registration if data dir missing
+  command: pg_dropcluster --stop 16 main
+  when: cluster_registered and not pg_datadir.stat.exists
+  failed_when: false
+
+- name: Create PostgreSQL cluster
+  command: pg_createcluster 16 main
+  when: not pg_datadir.stat.exists
+  register: cluster_create
+
+- name: Display cluster creation result
+  debug:
+    var: cluster_create
+  when: cluster_create is defined
 
 - name: Ensure PostgreSQL is enabled
   systemd:
