@@ -16,13 +16,17 @@
 
 - name: Extract DKIM public key value
   set_fact:
-    dkim_public_key: "{{ dkim_public_key_file['content'] | b64decode | regex_search('p=([^;\"\\)]+)', '\\1') | first }}"
+    dkim_public_key: "{{ dkim_public_key_file['content'] | b64decode | regex_replace('\\s+', '') | regex_replace('\"', '') | regex_search('p=([A-Za-z0-9+/=]+)', '\\1') | first }}"
   when: dkim_public_key_file is defined and not dkim_public_key_file.failed
 
 - name: Set empty DKIM key if not found
   set_fact:
     dkim_public_key: ""
   when: dkim_public_key_file.failed is defined and dkim_public_key_file.failed
+
+- name: Detect server IPv6 address
+  set_fact:
+    server_ipv6: "{{ ansible_default_ipv6.address | default('') }}"
 
 - name: Generate SOA serial (YYYYMMDDnn format)
   set_fact:
@@ -173,7 +177,8 @@
     login_host: localhost
     query: >
       INSERT INTO records (domain_id, name, type, content, ttl, prio)
-      VALUES ({{ domain_id }}, '{{ primary_domain }}', 'TXT', 'v=spf1 ip4:{{ server_ip }} -all', 14400, NULL)
+      VALUES ({{ domain_id }}, '{{ primary_domain }}', 'TXT',
+              'v=spf1 ip4:{{ server_ip }}{% if server_ipv6 != "" %} ip6:{{ server_ipv6 }}{% endif %} -all', 14400, NULL)
   become_user: postgres
 
 - name: Insert DMARC TXT record
