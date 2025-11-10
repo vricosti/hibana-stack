@@ -52,6 +52,8 @@ services:
     restart: unless-stopped
     networks:
       - hibana-network
+    extra_hosts:
+      - "mail.{{ primary_domain }}:host-gateway"
     environment:
       - ROUNDCUBEMAIL_DEFAULT_HOST=mail.{{ primary_domain }}
       - ROUNDCUBEMAIL_SMTP_SERVER=mail.{{ primary_domain }}
