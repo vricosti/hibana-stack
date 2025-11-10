@@ -46,7 +46,18 @@
       "Bash(./build.sh:*)",
       "Bash(dpkg:*)",
       "Bash(systemctl list-unit-files:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(sudo -S grep:*)",
+      "Bash(sudo -S chmod:*)",
+      "Bash(sudo -S usermod:*)",
+      "Bash(sudo -S systemctl cat:*)",
+      "Bash(sudo -S mkdir:*)",
+      "Bash(sudo -S chown:*)",
+      "Bash(sudo -S systemctl start:*)",
+      "Bash(sudo -S -u postfix test:*)",
+      "Bash(sudo -S opendkim-testkey:*)",
+      "Bash(ip:*)",
+      "Bash(sudo -S -u postgres psql:*)"
     ],
     "deny": [],
     "ask": []

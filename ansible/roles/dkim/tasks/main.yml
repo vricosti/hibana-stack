@@ -79,6 +79,29 @@
     groups: opendkim
     append: yes
 
+- name: Create OpenDKIM systemd override directory
+  file:
+    path: /etc/systemd/system/opendkim.service.d
+    state: directory
+    mode: '0755'
+
+- name: Create OpenDKIM systemd override
+  copy:
+    dest: /etc/systemd/system/opendkim.service.d/override.conf
+    content: |
+      [Service]
+      RuntimeDirectory=opendkim
+      RuntimeDirectoryMode=0750
+      User=opendkim
+      Group=opendkim
+      SupplementaryGroups=
+    mode: '0644'
+  notify: Restart OpenDKIM
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+
 - name: Ensure OpenDKIM is enabled and started
   systemd:
     name: opendkim

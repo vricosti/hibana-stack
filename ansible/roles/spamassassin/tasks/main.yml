@@ -63,11 +63,11 @@
   failed_when: false
   changed_when: sa_update_result.rc == 0
 
-- name: Add SpamAssassin content filter to Postfix main.cf
+- name: Add SpamAssassin content filter to Postfix main.cf (disabled to avoid loops)
   lineinfile:
     path: /etc/postfix/main.cf
-    line: "content_filter = spamassassin"
-    regexp: "^content_filter"
+    line: "#content_filter = spamassassin"
+    regexp: "^#?content_filter"
     state: present
   notify: Restart Postfix for SpamAssassin
 
@@ -78,7 +78,7 @@
     block: |
       # SpamAssassin filter
       spamassassin unix -     n       n       -       -       pipe
-        user=spamd argv=/usr/bin/spamc -f -e /usr/sbin/sendmail -oi -f ${sender} ${recipient}
+        user=spamd argv=/usr/bin/spamc -f -e /usr/sbin/sendmail -G -i -o content_filter= -f ${sender} ${recipient}
   notify: Restart Postfix for SpamAssassin
 
 - name: Add Sieve configuration to Dovecot
