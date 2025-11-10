@@ -248,10 +248,15 @@
     group: root
     mode: '0644'
 
+- name: Check if JWT secret exists
+  stat:
+    path: "/srv/api.{{ primary_domain }}/secrets/jwt_secret"
+  register: jwt_secret_file
+
 - name: Generate JWT secret if not exists
   shell: openssl rand -base64 32
   register: jwt_secret
-  when: not (("/srv/api." + primary_domain + "/secrets/jwt_secret") | stat | default({}) | attr('exists', False))
+  when: not jwt_secret_file.stat.exists
 
 - name: Save JWT secret
   copy:
@@ -260,16 +265,20 @@
     owner: root
     group: root
     mode: '0600'
-  when: jwt_secret.changed
+  when: not jwt_secret_file.stat.exists and jwt_secret.stdout is defined
+
+- name: Read hibana database password
+  slurp:
+    src: /etc/hibana/passwords/hibana
+  register: hibana_db_password_file
 
 - name: Create database password secret
   copy:
-    content: "{{ database_password }}"
+    content: "{{ hibana_db_password_file.content | b64decode }}"
     dest: "/srv/api.{{ primary_domain }}/secrets/db_password"
     owner: root
     group: root
     mode: '0600'
-  when: database_password is defined
 
 - name: Start api service
   docker_compose:
