@@ -1,0 +1,103 @@
+package main
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+	"time"
+)
+
+type HealthResponse struct {
+	Status    string    `json:"status"`
+	Version   string    `json:"version"`
+	Timestamp time.Time `json:"timestamp"`
+	Service   string    `json:"service"`
+}
+
+func main() {
+	port := getEnv("API_PORT", "3000")
+	domain := getEnv("DOMAIN", "{{ primary_domain }}")
+
+	mux := http.NewServeMux()
+
+	// Health check endpoint
+	mux.HandleFunc("/health", healthHandler)
+
+	// API info endpoint
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		infoHandler(w, r, domain)
+	})
+
+	// CORS middleware
+	handler := corsMiddleware(mux)
+
+	log.Printf("Starting Hibana API Server on port %s for domain %s", port, domain)
+	log.Printf("Health check available at: http://localhost:%s/health", port)
+
+	if err := http.ListenAndServe(":"+port, handler); err != nil {
+		log.Fatal("Server failed to start:", err)
+	}
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	response := HealthResponse{
+		Status:    "healthy",
+		Version:   "1.0.0-placeholder",
+		Timestamp: time.Now(),
+		Service:   "hibana-api",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func infoHandler(w http.ResponseWriter, r *http.Request, domain string) {
+	info := map[string]interface{}{
+		"service":     "Hibana Stack API",
+		"version":     "1.0.0-placeholder",
+		"domain":      domain,
+		"status":      "Phase 2 - Coming Soon",
+		"description": "REST API for Hibana Stack administration",
+		"endpoints": map[string]string{
+			"/health":  "Health check endpoint",
+			"/api/v1":  "API v1 endpoints (coming soon)",
+		},
+		"features": []string{
+			"Domain management",
+			"Email account administration",
+			"DNS record management",
+			"SSL certificate monitoring",
+			"Server statistics",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}

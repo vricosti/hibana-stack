@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  admin:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: adm-{{ primary_domain | replace('.', '-') }}
+    restart: unless-stopped
+    environment:
+      - DOMAIN=${DOMAIN:-{{ primary_domain }}}
+      - DATABASE_HOST=host.docker.internal
+      - DATABASE_NAME=hibana
+      - DATABASE_USER=hibana
+    volumes:
+      - ./logs:/var/log/nginx
+      - ./data:/app/data
+    networks:
+      - traefik-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adm.rule=Host(`adm.{{ primary_domain }}`)"
+      - "traefik.http.routers.adm.entrypoints=websecure"
+      - "traefik.http.routers.adm.tls.certresolver=letsencrypt"
+      - "traefik.http.services.adm.loadbalancer.server.port=80"
+      - "traefik.http.routers.adm.middlewares=security-headers@file"
+
+networks:
+  traefik-network:
+    external: true

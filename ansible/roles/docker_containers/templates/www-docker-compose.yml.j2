@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: www-{{ primary_domain | replace('.', '-') }}
+    restart: unless-stopped
+    volumes:
+      - ./logs:/var/log/nginx
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - traefik-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.www.rule=Host(`www.{{ primary_domain }}`) || Host(`{{ primary_domain }}`)"
+      - "traefik.http.routers.www.entrypoints=websecure"
+      - "traefik.http.routers.www.tls.certresolver=letsencrypt"
+      - "traefik.http.services.www.loadbalancer.server.port=80"
+      - "traefik.http.routers.www.middlewares=security-headers@file,compress@file"
+
+networks:
+  traefik-network:
+    external: true
