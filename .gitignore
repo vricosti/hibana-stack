@@ -36,7 +36,7 @@ go.work.sum
 
 # Hibana-specific
 bin/
-hibana
+/hibana
 hibana-config.yaml
 *.yaml.example
 
