@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  webmail:
+    image: roundcube/roundcubemail:latest
+    container_name: webmail-{{ primary_domain | replace('.', '-') }}
+    restart: unless-stopped
+    environment:
+      - ROUNDCUBEMAIL_DEFAULT_HOST=${MAIL_HOST:-mail.{{ primary_domain }}}
+      - ROUNDCUBEMAIL_SMTP_SERVER=${MAIL_HOST:-mail.{{ primary_domain }}}
+      - ROUNDCUBEMAIL_DEFAULT_PORT=${IMAP_PORT:-143}
+      - ROUNDCUBEMAIL_SMTP_PORT=${SMTP_PORT:-587}
+      - ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=${UPLOAD_MAX_SIZE:-30M}
+      - ROUNDCUBEMAIL_DB_TYPE=${DB_TYPE:-sqlite}
+    volumes:
+      - ./data:/var/roundcube/db
+      - ./logs:/var/log/roundcube
+    networks:
+      - traefik-network
+    extra_hosts:
+      - "mail.{{ primary_domain }}:host-gateway"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.webmail.rule=Host(`webmail.{{ primary_domain }}`)"
+      - "traefik.http.routers.webmail.entrypoints=websecure"
+      - "traefik.http.routers.webmail.tls.certresolver=letsencrypt"
+      - "traefik.http.services.webmail.loadbalancer.server.port=80"
+      - "traefik.http.routers.webmail.middlewares=security-headers@file"
+
+networks:
+  traefik-network:
+    external: true

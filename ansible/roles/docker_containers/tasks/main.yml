@@ -1,31 +1,84 @@
 ---
-- name: Create Docker directory
-  file:
-    path: /etc/hibana/docker
-    state: directory
-    mode: '0755'
+# ============================================================================
+# New /srv/ Microservices Architecture
+# Each service is isolated in its own directory with dedicated compose file
+# ============================================================================
 
-- name: Create Docker network
+- name: Create Traefik network
   docker_network:
-    name: hibana-network
+    name: traefik-network
     state: present
 
-- name: Create www container directory
-  file:
-    path: /etc/hibana/docker/www
-    state: directory
-    mode: '0755'
+# ============================================================================
+# Traefik Service (Reverse Proxy & SSL)
+# ============================================================================
 
-- name: Create adm container directory
+- name: Create Traefik service directory
   file:
-    path: /etc/hibana/docker/adm
+    path: "/srv/traefik/{{ item }}"
     state: directory
     mode: '0755'
+  loop:
+    - ''
+    - 'dynamic'
+
+- name: Create Traefik static configuration
+  template:
+    src: traefik/traefik.yml.j2
+    dest: /srv/traefik/traefik.yml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create Traefik dynamic middlewares
+  template:
+    src: traefik/middlewares.yml.j2
+    dest: /srv/traefik/dynamic/middlewares.yml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create Traefik docker-compose
+  template:
+    src: traefik/docker-compose.yml.j2
+    dest: /srv/traefik/docker-compose.yml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create acme.json for Let's Encrypt
+  file:
+    path: /srv/traefik/acme.json
+    state: touch
+    mode: '0600'
+    owner: root
+    group: root
+
+- name: Start Traefik service
+  docker_compose:
+    project_src: /srv/traefik
+    state: present
+  register: traefik_result
+
+# ============================================================================
+# www Service (Main Website)
+# ============================================================================
+
+- name: Create www service directories
+  file:
+    path: "/srv/www.{{ primary_domain }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - ''
+    - 'src'
+    - 'nginx'
+    - 'logs'
 
 - name: Copy www Dockerfile
   copy:
     src: www-Dockerfile
-    dest: /etc/hibana/docker/www/Dockerfile
+    dest: "/srv/www.{{ primary_domain }}/src/Dockerfile"
     owner: root
     group: root
     mode: '0644'
@@ -33,15 +86,53 @@
 - name: Create www index.html
   template:
     src: www-index.html.j2
-    dest: /etc/hibana/docker/www/index.html
+    dest: "/srv/www.{{ primary_domain }}/src/index.html"
     owner: root
     group: root
     mode: '0644'
 
+- name: Create www nginx configuration
+  template:
+    src: www-nginx.conf.j2
+    dest: "/srv/www.{{ primary_domain }}/nginx/default.conf"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create www docker-compose
+  template:
+    src: www-docker-compose.yml.j2
+    dest: "/srv/www.{{ primary_domain }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Start www service
+  docker_compose:
+    project_src: "/srv/www.{{ primary_domain }}"
+    build: yes
+    state: present
+  register: www_result
+
+# ============================================================================
+# adm Service (Admin Interface)
+# ============================================================================
+
+- name: Create adm service directories
+  file:
+    path: "/srv/adm.{{ primary_domain }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - ''
+    - 'app'
+    - 'data'
+    - 'logs'
+
 - name: Copy adm Dockerfile
   copy:
     src: adm-Dockerfile
-    dest: /etc/hibana/docker/adm/Dockerfile
+    dest: "/srv/adm.{{ primary_domain }}/app/Dockerfile"
     owner: root
     group: root
     mode: '0644'
@@ -49,26 +140,161 @@
 - name: Create adm index.html
   template:
     src: adm-index.html.j2
-    dest: /etc/hibana/docker/adm/index.html
+    dest: "/srv/adm.{{ primary_domain }}/app/index.html"
     owner: root
     group: root
     mode: '0644'
 
-- name: Create docker-compose file
+- name: Create adm .env file
   template:
-    src: docker-compose.yml.j2
-    dest: /etc/hibana/docker/docker-compose.yml
+    src: adm-env.j2
+    dest: "/srv/adm.{{ primary_domain }}/.env"
     owner: root
     group: root
     mode: '0644'
 
-- name: Start Docker containers with docker-compose
+- name: Create adm docker-compose
+  template:
+    src: adm-docker-compose.yml.j2
+    dest: "/srv/adm.{{ primary_domain }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Start adm service
   docker_compose:
-    project_src: /etc/hibana/docker
+    project_src: "/srv/adm.{{ primary_domain }}"
     build: yes
     state: present
-  register: docker_compose_result
+  register: adm_result
 
-- name: Display Docker compose result
+# ============================================================================
+# webmail Service (Roundcube)
+# ============================================================================
+
+- name: Create webmail service directories
+  file:
+    path: "/srv/webmail.{{ primary_domain }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - ''
+    - 'data'
+    - 'logs'
+
+- name: Create webmail .env file
+  template:
+    src: webmail-env.j2
+    dest: "/srv/webmail.{{ primary_domain }}/.env"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create webmail docker-compose
+  template:
+    src: webmail-docker-compose.yml.j2
+    dest: "/srv/webmail.{{ primary_domain }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Start webmail service
+  docker_compose:
+    project_src: "/srv/webmail.{{ primary_domain }}"
+    state: present
+  register: webmail_result
+
+# ============================================================================
+# api Service (REST API Backend)
+# ============================================================================
+
+- name: Create api service directories
+  file:
+    path: "/srv/api.{{ primary_domain }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - ''
+    - 'app'
+    - 'data'
+    - 'logs'
+    - 'secrets'
+
+- name: Create api application files
+  template:
+    src: "api-{{ item }}.j2"
+    dest: "/srv/api.{{ primary_domain }}/app/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - 'main.go'
+    - 'go.mod'
+    - 'Dockerfile'
+
+- name: Create api .env file
+  template:
+    src: api-env.j2
+    dest: "/srv/api.{{ primary_domain }}/.env"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create api docker-compose
+  template:
+    src: api-docker-compose.yml.j2
+    dest: "/srv/api.{{ primary_domain }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Generate JWT secret if not exists
+  shell: openssl rand -base64 32
+  register: jwt_secret
+  when: not (("/srv/api." + primary_domain + "/secrets/jwt_secret") | stat | default({}) | attr('exists', False))
+
+- name: Save JWT secret
+  copy:
+    content: "{{ jwt_secret.stdout }}"
+    dest: "/srv/api.{{ primary_domain }}/secrets/jwt_secret"
+    owner: root
+    group: root
+    mode: '0600'
+  when: jwt_secret.changed
+
+- name: Create database password secret
+  copy:
+    content: "{{ database_password }}"
+    dest: "/srv/api.{{ primary_domain }}/secrets/db_password"
+    owner: root
+    group: root
+    mode: '0600'
+  when: database_password is defined
+
+- name: Start api service
+  docker_compose:
+    project_src: "/srv/api.{{ primary_domain }}"
+    build: yes
+    state: present
+  register: api_result
+
+# ============================================================================
+# Display Results
+# ============================================================================
+
+- name: Display service deployment results
   debug:
-    var: docker_compose_result
+    msg:
+      - "Traefik: {{ traefik_result.state }}"
+      - "WWW: {{ www_result.state }}"
+      - "Admin: {{ adm_result.state }}"
+      - "Webmail: {{ webmail_result.state }}"
+      - "API: {{ api_result.state }}"
+
+- name: Display service URLs
+  debug:
+    msg:
+      - "Main Website: https://www.{{ primary_domain }}"
+      - "Admin Interface: https://adm.{{ primary_domain }}"
+      - "Webmail: https://webmail.{{ primary_domain }}"
+      - "API: https://api.{{ primary_domain }}"
