@@ -1,7 +1,20 @@
 ---
+- name: Detect installed PostgreSQL version
+  shell: "ls -1 /usr/lib/postgresql/ | sort -V | tail -1"
+  register: pg_version_detect
+  changed_when: false
+
+- name: Set PostgreSQL version fact
+  set_fact:
+    pg_version: "{{ pg_version_detect.stdout }}"
+
+- name: Display detected PostgreSQL version
+  debug:
+    msg: "Detected PostgreSQL version: {{ pg_version }}"
+
 - name: Check if PostgreSQL data directory exists
   stat:
-    path: /var/lib/postgresql/16/main
+    path: "/var/lib/postgresql/{{ pg_version }}/main"
   register: pg_datadir
 
 - name: Check if PostgreSQL cluster is registered
@@ -16,15 +29,15 @@
 
 - name: Check if main cluster is registered
   set_fact:
-    cluster_registered: "{{ pg_clusters.stdout | regex_search('16\\s+main') is not none }}"
+    cluster_registered: "{{ pg_clusters.stdout | regex_search(pg_version + '\\s+main') is not none }}"
 
 - name: Remove broken cluster registration if data dir missing
-  command: pg_dropcluster --stop 16 main
+  command: "pg_dropcluster --stop {{ pg_version }} main"
   when: cluster_registered and not pg_datadir.stat.exists
   failed_when: false
 
 - name: Create PostgreSQL cluster
-  command: pg_createcluster 16 main
+  command: "pg_createcluster {{ pg_version }} main"
   when: not pg_datadir.stat.exists
   register: cluster_create
 
@@ -40,13 +53,13 @@
 
 - name: Disable SSL in PostgreSQL configuration
   lineinfile:
-    path: /etc/postgresql/16/main/postgresql.conf
+    path: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
     regexp: '^ssl\s*='
     line: 'ssl = off'
     state: present
 
 - name: Check if PostgreSQL cluster is running
-  shell: pg_lsclusters -h | grep "16.*main" | awk '{print $4}'
+  shell: "pg_lsclusters -h | grep '{{ pg_version }}.*main' | awk '{print $4}'"
   register: cluster_status
   changed_when: false
   failed_when: false
@@ -56,7 +69,7 @@
     msg: "Cluster status: {{ cluster_status.stdout }}"
 
 - name: Start PostgreSQL cluster if not running
-  command: pg_ctlcluster 16 main start
+  command: "pg_ctlcluster {{ pg_version }} main start"
   when: cluster_status.stdout != "online"
   register: pg_start
 
@@ -65,7 +78,7 @@
     seconds: 5
 
 - name: Verify cluster is now online
-  shell: pg_lsclusters -h | grep "16.*main"
+  shell: "pg_lsclusters -h | grep '{{ pg_version }}.*main'"
   register: final_cluster_status
   changed_when: false
 

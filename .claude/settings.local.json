@@ -41,7 +41,12 @@
       "Bash(sudo -S docker stop:*)",
       "Bash(sudo -S docker rm:*)",
       "Bash(sudo -S bash -c 'cd /etc/hibana/docker && docker-compose up -d webmail')",
-      "Bash(sudo -S netstat:*)"
+      "Bash(sudo -S netstat:*)",
+      "Bash(chmod:*)",
+      "Bash(./build.sh:*)",
+      "Bash(dpkg:*)",
+      "Bash(systemctl list-unit-files:*)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []

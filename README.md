@@ -28,7 +28,7 @@ git clone https://github.com/vricosti/hibana-stack.git
 cd hibana-stack
 
 # Build the binary
-make build
+./build.sh
 
 # Generate configuration skeleton
 sudo ./bin/hibana init --config hibana-config.yaml
@@ -124,7 +124,7 @@ See [config-example.yaml](config-example.yaml) for a complete example.
 
 ## Requirements
 
-- Ubuntu Server 24.04 LTS
+- Ubuntu Server (24.04 LTS recommended)
 - Root or sudo access
 - Domain name with DNS control
 - At least 2GB RAM
