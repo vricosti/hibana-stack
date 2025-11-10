@@ -101,3 +101,9 @@ hibana-stack/
 - Write clear, concise commit messages describing the changes
 - Do not reference AI assistants or tools (e.g., Claude) in commit messages
 - Focus on what changed and why, not how it was created
+
+**Documentation Guidelines**
+- Do not create multiple .md files unnecessarily
+- When adding documentation, prefer updating existing files, especially README.md
+- Keep documentation consolidated and maintainable
+- Only create new documentation files when absolutely necessary for organization

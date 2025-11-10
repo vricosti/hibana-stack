@@ -6,13 +6,12 @@
     regexp: '^127\.0\.1\.1'
     state: present
 
-- name: Check Ubuntu version
+- name: Check Ubuntu distribution
   assert:
     that:
       - ansible_distribution == "Ubuntu"
-      - ansible_distribution_version == "24.04"
-    fail_msg: "Ubuntu 24.04 is required"
-    success_msg: "Ubuntu 24.04 detected"
+    fail_msg: "Ubuntu is required"
+    success_msg: "Ubuntu detected"
 
 - name: Preconfigure Postfix
   debconf:

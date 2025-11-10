@@ -1,4 +1,24 @@
 ---
+- name: Detect SpamAssassin service name
+  shell: |
+    if systemctl list-unit-files | grep -q "^spamd.service"; then
+      echo "spamd"
+    elif systemctl list-unit-files | grep -q "^spamassassin.service"; then
+      echo "spamassassin"
+    else
+      echo "spamassassin"
+    fi
+  register: spamassassin_service_detect
+  changed_when: false
+
+- name: Set SpamAssassin service name
+  set_fact:
+    spamassassin_service: "{{ spamassassin_service_detect.stdout }}"
+
+- name: Display detected SpamAssassin service name
+  debug:
+    msg: "Using SpamAssassin service: {{ spamassassin_service }}"
+
 - name: Create spamd user
   user:
     name: spamd
@@ -17,13 +37,24 @@
     mode: '0644'
   notify: Restart SpamAssassin
 
-- name: Configure SpamAssassin daemon options
+- name: Configure SpamAssassin daemon options (Ubuntu 22.04 and earlier)
   copy:
     src: spamassassin-default
     dest: /etc/default/spamassassin
     owner: root
     group: root
     mode: '0644'
+  when: spamassassin_service == "spamassassin"
+  notify: Restart SpamAssassin
+
+- name: Configure SpamAssassin daemon options (Ubuntu 24.04)
+  copy:
+    src: spamassassin-default
+    dest: /etc/default/spamd
+    owner: root
+    group: root
+    mode: '0644'
+  when: spamassassin_service == "spamd"
   notify: Restart SpamAssassin
 
 - name: Update SpamAssassin rules
@@ -117,6 +148,6 @@
 
 - name: Ensure SpamAssassin is enabled and started
   systemd:
-    name: spamd
+    name: "{{ spamassassin_service }}"
     state: started
     enabled: yes

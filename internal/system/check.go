@@ -30,7 +30,7 @@ var requiredPackages = []string{
 	"spamc",
 }
 
-// CheckUbuntuVersion verifies the system is running Ubuntu 24.04
+// CheckUbuntuVersion verifies the system is running Ubuntu
 func CheckUbuntuVersion() error {
 	// Check /etc/os-release
 	file, err := os.Open("/etc/os-release")
@@ -40,7 +40,6 @@ func CheckUbuntuVersion() error {
 	defer file.Close()
 
 	var isUbuntu bool
-	var version string
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -50,9 +49,6 @@ func CheckUbuntuVersion() error {
 				isUbuntu = true
 			}
 		}
-		if strings.HasPrefix(line, "VERSION_ID=") {
-			version = strings.Trim(strings.TrimPrefix(line, "VERSION_ID="), `"`)
-		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -61,10 +57,6 @@ func CheckUbuntuVersion() error {
 
 	if !isUbuntu {
 		return fmt.Errorf("this system is not running Ubuntu")
-	}
-
-	if version != "24.04" {
-		return fmt.Errorf("Ubuntu version %s detected, but 24.04 is required", version)
 	}
 
 	return nil

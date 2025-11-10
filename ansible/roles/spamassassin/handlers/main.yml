@@ -1,7 +1,7 @@
 ---
 - name: Restart SpamAssassin
   systemd:
-    name: spamd
+    name: "{{ spamassassin_service }}"
     state: restarted
 
 - name: Restart Postfix for SpamAssassin

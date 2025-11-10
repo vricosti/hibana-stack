@@ -42,7 +42,7 @@ func InstallInstructions() string {
 	return `
 Ansible is required to run Hibana Stack.
 
-To install Ansible on Ubuntu 24.04:
+To install Ansible on Ubuntu:
 
   sudo apt update
   sudo apt install -y ansible

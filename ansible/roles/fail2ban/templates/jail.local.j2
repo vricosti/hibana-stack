@@ -80,10 +80,10 @@ bantime = 30m
 findtime = 5m
 
 #
-# Apache Bad Bots (for Roundcube container)
+# Apache Bad Bots (disabled - Roundcube runs in Docker)
 #
 [apache-badbots]
-enabled = true
+enabled = false
 port = http,https
 logpath = /var/log/apache2/*error.log
 maxretry = 2

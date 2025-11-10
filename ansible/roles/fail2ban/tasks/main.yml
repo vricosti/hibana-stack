@@ -40,10 +40,20 @@
     enabled: yes
     state: started
 
+- name: Wait for Fail2Ban socket to be ready
+  wait_for:
+    path: /var/run/fail2ban/fail2ban.sock
+    state: present
+    timeout: 30
+    sleep: 1
+
 - name: Display Fail2Ban status
   command: fail2ban-client status
   register: fail2ban_status
   changed_when: false
+  retries: 5
+  delay: 2
+  until: fail2ban_status.rc == 0
 
 - name: Show active jails
   debug:
