@@ -14,7 +14,7 @@ services:
       - ROUNDCUBEMAIL_DB_TYPE=${DB_TYPE:-sqlite}
     volumes:
       - ./data:/var/roundcube/db
-      - ./logs:/var/log/roundcube
+      - ./logs:/var/log/apache2
     networks:
       - traefik-network
     extra_hosts:
