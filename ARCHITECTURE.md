@@ -23,30 +23,31 @@ Hibana Stack uses a **microservices architecture** with each service isolated in
 │   │   └── middlewares.yml    # Security headers, rate limiting
 │   └── acme.json              # Let's Encrypt certificates
 │
-├── www.vridev.com/            # Main website
-│   ├── docker-compose.yml
-│   ├── src/                   # React application source
-│   ├── nginx/                 # Web server configuration
-│   └── logs/
-│
-├── adm.vridev.com/            # Administration interface
-│   ├── docker-compose.yml
-│   ├── app/                   # Admin UI application
-│   ├── data/
-│   └── logs/
-│
-├── webmail.vridev.com/        # Roundcube webmail
-│   ├── docker-compose.yml
-│   ├── .env                   # Service configuration
-│   ├── data/                  # SQLite database
-│   └── logs/
-│
-└── api.vridev.com/            # REST API backend
-    ├── docker-compose.yml
-    ├── app/                   # Go API source code
-    ├── secrets/               # Credentials & secrets
-    ├── data/
-    └── logs/
+└── primarydomain.com/         # Domain directory
+    ├── www/                   # Main website
+    │   ├── docker-compose.yml
+    │   ├── src/               # React application source
+    │   ├── nginx/             # Web server configuration
+    │   └── logs/
+    │
+    ├── adm/                   # Administration interface
+    │   ├── docker-compose.yml
+    │   ├── app/               # Admin UI application
+    │   ├── data/
+    │   └── logs/
+    │
+    ├── webmail/               # Roundcube webmail
+    │   ├── docker-compose.yml
+    │   ├── .env               # Service configuration
+    │   ├── data/              # SQLite database
+    │   └── logs/
+    │
+    └── api/                   # REST API backend
+        ├── docker-compose.yml
+        ├── app/               # Go API source code
+        ├── secrets/           # Credentials & secrets
+        ├── data/
+        └── logs/
 ```
 
 ### Why `/srv/` Instead of Alternatives?
@@ -89,7 +90,7 @@ labels:
   - "traefik.http.routers.[name].tls.certresolver=letsencrypt"
 ```
 
-### 2. www.vridev.com (Main Website)
+### 2. www (Main Website)
 
 **Stack:** React + nginx
 
@@ -104,7 +105,7 @@ labels:
 - Security headers
 - Client-side routing support (React Router)
 
-### 3. adm.vridev.com (Admin Interface)
+### 3. adm (Admin Interface)
 
 **Status:** Phase 1 placeholder
 
@@ -117,15 +118,15 @@ labels:
 
 **Future Stack (Phase 2):**
 - Frontend: React + Admin UI framework
-- Backend: Connects to api.vridev.com
+- Backend: Connects to api.primarydomain.com
 - Auth: JWT-based authentication
 
-### 4. webmail.vridev.com (Roundcube)
+### 4. webmail (Roundcube)
 
 **Stack:** Roundcube (PHP/Apache) + SQLite
 
 **Features:**
-- Connects to host mail server via `mail.vridev.com`
+- Connects to host mail server via `mail.primarydomain.com`
 - IMAP on port 143 (STARTTLS)
 - SMTP on port 587 (STARTTLS)
 - SQLite for simplicity (can migrate to PostgreSQL if needed)
@@ -133,11 +134,11 @@ labels:
 **Host Connection:**
 ```yaml
 extra_hosts:
-  - "mail.vridev.com:host-gateway"
+  - "mail.primarydomain.com:host-gateway"
 ```
-This maps mail.vridev.com to the Docker host IP.
+This maps mail.primarydomain.com to the Docker host IP.
 
-### 5. api.vridev.com (REST API)
+### 5. api (REST API)
 
 **Stack:** Go 1.21 + PostgreSQL
 
@@ -206,10 +207,10 @@ cd /srv/traefik
 docker-compose up -d
 
 # 3. Deploy each service
-cd /srv/www.vridev.com && docker-compose up -d
-cd /srv/adm.vridev.com && docker-compose up -d
-cd /srv/webmail.vridev.com && docker-compose up -d
-cd /srv/api.vridev.com && docker-compose up -d
+cd /srv/primarydomain.com/www && docker-compose up -d
+cd /srv/primarydomain.com/adm && docker-compose up -d
+cd /srv/primarydomain.com/webmail && docker-compose up -d
+cd /srv/primarydomain.com/api && docker-compose up -d
 ```
 
 ### Updates & Maintenance
@@ -234,10 +235,12 @@ docker-compose down
 ### Backup Strategy
 
 ```bash
-# Each service is self-contained - backup the entire directory
-tar -czf www-backup.tar.gz /srv/www.vridev.com
-tar -czf webmail-backup.tar.gz /srv/webmail.vridev.com
-tar -czf api-backup.tar.gz /srv/api.vridev.com
+# Backup entire domain
+tar -czf primarydomain.com-backup.tar.gz /srv/primarydomain.com
+# Or backup individual services
+tar -czf www-backup.tar.gz /srv/primarydomain.com/www
+tar -czf webmail-backup.tar.gz /srv/primarydomain.com/webmail
+tar -czf api-backup.tar.gz /srv/primarydomain.com/api
 # Exclude node_modules, build artifacts if needed
 
 # Traefik certificates
@@ -253,7 +256,7 @@ User Request → Traefik (SSL) → Service Container
 ```
 
 All external traffic flows through Traefik:
-1. User requests `https://webmail.vridev.com`
+1. User requests `https://webmail.primarydomain.com`
 2. Traefik matches Host header to routing rule
 3. Traefik terminates SSL and forwards to webmail container
 4. Response flows back through Traefik to user
@@ -278,7 +281,7 @@ Services can communicate via Docker network:
 
 ```bash
 # From api container
-curl http://webmail-vridev/health
+curl http://webmail-primarydomain/health
 ```
 
 Container names become DNS names within the `traefik-network`.
@@ -314,7 +317,7 @@ http:
 Sensitive data stored in secrets files:
 
 ```bash
-/srv/api.vridev.com/secrets/
+/srv/primarydomain.com/api/secrets/
 ├── db_password          # Never committed to git
 ├── jwt_secret           # Generated with openssl rand
 └── .gitignore          # Excludes all except .example files
@@ -453,16 +456,20 @@ The Hibana Stack installer (Ansible roles) should:
 1. **Generate service directories**
    ```yaml
    # ansible/roles/docker/tasks/main.yml
+   - name: Create domain directory
+     file:
+       path: "/srv/{{ domain }}"
+       state: directory
+
    - name: Create service directories
      file:
-       path: "/srv/{{ item }}"
+       path: "/srv/{{ domain }}/{{ item }}"
        state: directory
      loop:
-       - traefik
-       - www.{{ domain }}
-       - adm.{{ domain }}
-       - webmail.{{ domain }}
-       - api.{{ domain }}
+       - www
+       - adm
+       - webmail
+       - api
    ```
 
 2. **Template docker-compose files**
@@ -470,7 +477,7 @@ The Hibana Stack installer (Ansible roles) should:
    - name: Deploy docker-compose files
      template:
        src: "{{ item }}/docker-compose.yml.j2"
-       dest: "/srv/{{ item }}/docker-compose.yml"
+       dest: "/srv/{{ domain }}/{{ item }}/docker-compose.yml"
    ```
 
 3. **Start services in order**
@@ -482,7 +489,7 @@ The Hibana Stack installer (Ansible roles) should:
 
    - name: Start web services
      docker_compose:
-       project_src: "/srv/{{ item }}"
+       project_src: "/srv/{{ domain }}/{{ item }}"
        state: present
      loop: "{{ web_services }}"
    ```

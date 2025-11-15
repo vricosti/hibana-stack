@@ -1,6 +1,7 @@
 ---
 # ============================================================================
-# New /srv/ Microservices Architecture
+# /srv/ Microservices Architecture - Domain-based Organization
+# Structure: /srv/<domain>/<service>/ (e.g., /srv/primarydomain.com/api/)
 # Each service is isolated in its own directory with dedicated compose file
 # ============================================================================
 
@@ -66,7 +67,7 @@
 
 - name: Create www service directories
   file:
-    path: "/srv/www.{{ primary_domain }}/{{ item }}"
+    path: "/srv/{{ primary_domain }}/www/{{ item }}"
     state: directory
     mode: '0755'
   loop:
@@ -78,7 +79,7 @@
 - name: Copy www Dockerfile
   copy:
     src: www-Dockerfile
-    dest: "/srv/www.{{ primary_domain }}/src/Dockerfile"
+    dest: "/srv/{{ primary_domain }}/www/src/Dockerfile"
     owner: root
     group: root
     mode: '0644'
@@ -86,7 +87,7 @@
 - name: Create www index.html
   template:
     src: www-index.html.j2
-    dest: "/srv/www.{{ primary_domain }}/src/index.html"
+    dest: "/srv/{{ primary_domain }}/www/src/index.html"
     owner: root
     group: root
     mode: '0644'
@@ -94,7 +95,7 @@
 - name: Create www nginx configuration
   template:
     src: www-nginx.conf.j2
-    dest: "/srv/www.{{ primary_domain }}/nginx/default.conf"
+    dest: "/srv/{{ primary_domain }}/www/nginx/default.conf"
     owner: root
     group: root
     mode: '0644'
@@ -102,14 +103,14 @@
 - name: Create www docker-compose
   template:
     src: www-docker-compose.yml.j2
-    dest: "/srv/www.{{ primary_domain }}/docker-compose.yml"
+    dest: "/srv/{{ primary_domain }}/www/docker-compose.yml"
     owner: root
     group: root
     mode: '0644'
 
 - name: Start www service
   docker_compose:
-    project_src: "/srv/www.{{ primary_domain }}"
+    project_src: "/srv/{{ primary_domain }}/www"
     build: yes
     state: present
   register: www_result
@@ -120,7 +121,7 @@
 
 - name: Create adm service directories
   file:
-    path: "/srv/adm.{{ primary_domain }}/{{ item }}"
+    path: "/srv/{{ primary_domain }}/adm/{{ item }}"
     state: directory
     mode: '0755'
   loop:
@@ -132,7 +133,7 @@
 - name: Copy adm Dockerfile
   copy:
     src: adm-Dockerfile
-    dest: "/srv/adm.{{ primary_domain }}/app/Dockerfile"
+    dest: "/srv/{{ primary_domain }}/adm/app/Dockerfile"
     owner: root
     group: root
     mode: '0644'
@@ -140,7 +141,7 @@
 - name: Create adm index.html
   template:
     src: adm-index.html.j2
-    dest: "/srv/adm.{{ primary_domain }}/app/index.html"
+    dest: "/srv/{{ primary_domain }}/adm/app/index.html"
     owner: root
     group: root
     mode: '0644'
@@ -148,7 +149,7 @@
 - name: Create adm .env file
   template:
     src: adm-env.j2
-    dest: "/srv/adm.{{ primary_domain }}/.env"
+    dest: "/srv/{{ primary_domain }}/adm/.env"
     owner: root
     group: root
     mode: '0644'
@@ -156,14 +157,14 @@
 - name: Create adm docker-compose
   template:
     src: adm-docker-compose.yml.j2
-    dest: "/srv/adm.{{ primary_domain }}/docker-compose.yml"
+    dest: "/srv/{{ primary_domain }}/adm/docker-compose.yml"
     owner: root
     group: root
     mode: '0644'
 
 - name: Start adm service
   docker_compose:
-    project_src: "/srv/adm.{{ primary_domain }}"
+    project_src: "/srv/{{ primary_domain }}/adm"
     build: yes
     state: present
   register: adm_result
@@ -174,7 +175,7 @@
 
 - name: Create webmail service directories
   file:
-    path: "/srv/webmail.{{ primary_domain }}/{{ item }}"
+    path: "/srv/{{ primary_domain }}/webmail/{{ item }}"
     state: directory
     mode: '0755'
   loop:
@@ -185,7 +186,7 @@
 - name: Create webmail .env file
   template:
     src: webmail-env.j2
-    dest: "/srv/webmail.{{ primary_domain }}/.env"
+    dest: "/srv/{{ primary_domain }}/webmail/.env"
     owner: root
     group: root
     mode: '0644'
@@ -193,14 +194,14 @@
 - name: Create webmail docker-compose
   template:
     src: webmail-docker-compose.yml.j2
-    dest: "/srv/webmail.{{ primary_domain }}/docker-compose.yml"
+    dest: "/srv/{{ primary_domain }}/webmail/docker-compose.yml"
     owner: root
     group: root
     mode: '0644'
 
 - name: Start webmail service
   docker_compose:
-    project_src: "/srv/webmail.{{ primary_domain }}"
+    project_src: "/srv/{{ primary_domain }}/webmail"
     state: present
   register: webmail_result
 
@@ -210,7 +211,7 @@
 
 - name: Create api service directories
   file:
-    path: "/srv/api.{{ primary_domain }}/{{ item }}"
+    path: "/srv/{{ primary_domain }}/api/{{ item }}"
     state: directory
     mode: '0755'
   loop:
@@ -223,7 +224,7 @@
 - name: Create api application files
   template:
     src: "api-{{ item }}.j2"
-    dest: "/srv/api.{{ primary_domain }}/app/{{ item }}"
+    dest: "/srv/{{ primary_domain }}/api/app/{{ item }}"
     owner: root
     group: root
     mode: '0644'
@@ -235,7 +236,7 @@
 - name: Create api .env file
   template:
     src: api-env.j2
-    dest: "/srv/api.{{ primary_domain }}/.env"
+    dest: "/srv/{{ primary_domain }}/api/.env"
     owner: root
     group: root
     mode: '0644'
@@ -243,14 +244,14 @@
 - name: Create api docker-compose
   template:
     src: api-docker-compose.yml.j2
-    dest: "/srv/api.{{ primary_domain }}/docker-compose.yml"
+    dest: "/srv/{{ primary_domain }}/api/docker-compose.yml"
     owner: root
     group: root
     mode: '0644'
 
 - name: Check if JWT secret exists
   stat:
-    path: "/srv/api.{{ primary_domain }}/secrets/jwt_secret"
+    path: "/srv/{{ primary_domain }}/api/secrets/jwt_secret"
   register: jwt_secret_file
 
 - name: Generate JWT secret if not exists
@@ -261,7 +262,7 @@
 - name: Save JWT secret
   copy:
     content: "{{ jwt_secret.stdout }}"
-    dest: "/srv/api.{{ primary_domain }}/secrets/jwt_secret"
+    dest: "/srv/{{ primary_domain }}/api/secrets/jwt_secret"
     owner: root
     group: root
     mode: '0600'
@@ -275,14 +276,14 @@
 - name: Create database password secret
   copy:
     content: "{{ hibana_db_password_file.content | b64decode }}"
-    dest: "/srv/api.{{ primary_domain }}/secrets/db_password"
+    dest: "/srv/{{ primary_domain }}/api/secrets/db_password"
     owner: root
     group: root
     mode: '0600'
 
 - name: Start api service
   docker_compose:
-    project_src: "/srv/api.{{ primary_domain }}"
+    project_src: "/srv/{{ primary_domain }}/api"
     build: yes
     state: present
   register: api_result
