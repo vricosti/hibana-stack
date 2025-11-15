@@ -12,6 +12,7 @@ services:
       - ROUNDCUBEMAIL_SMTP_PORT=${SMTP_PORT:-587}
       - ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=${UPLOAD_MAX_SIZE:-30M}
       - ROUNDCUBEMAIL_DB_TYPE=${DB_TYPE:-sqlite}
+      - ROUNDCUBEMAIL_USERNAME_DOMAIN=${USERNAME_DOMAIN:-{{ primary_domain }}}
     volumes:
       - ./data:/var/roundcube/db
       - ./logs:/var/log/apache2
