@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // SetupPowerDNS configures PowerDNS server
@@ -256,7 +257,7 @@ func (i *Installer) getDKIMPublicKey() (string, error) {
 	return publicKey, nil
 }
 
-// storeDomainInHibana stores domain info in Hibana database
+// storeDomainInHibana stores domain info in Hibana database and creates domain user
 func (i *Installer) storeDomainInHibana(pdnsDomainID int) error {
 	if i.db == nil {
 		return fmt.Errorf("Hibana database not connected")
@@ -272,10 +273,68 @@ func (i *Installer) storeDomainInHibana(pdnsDomainID int) error {
 			"INSERT INTO domains (name, server_ip) VALUES ($1, $2)",
 			i.config.PrimaryDomain, i.config.ServerIP,
 		)
+		if err != nil {
+			return fmt.Errorf("failed to insert domain: %w", err)
+		}
+	} else if err != nil {
 		return err
 	}
 
-	return err
+	// Create domain user if configuration is provided
+	if i.config.DomainUser != nil {
+		fmt.Printf("\n📋 Setting up domain user for %s\n", i.config.PrimaryDomain)
+
+		// Ensure hibana-domains group exists
+		if err := i.EnsureHibanaDomainGroup(); err != nil {
+			return fmt.Errorf("failed to ensure hibana-domains group: %w", err)
+		}
+
+		// Ensure master encryption key exists
+		if err := i.EnsureMasterKey(); err != nil {
+			return fmt.Errorf("failed to ensure master encryption key: %w", err)
+		}
+
+		// Get SSH public key from config
+		sshPubKey := ""
+		if i.config.DomainUser.SSHPublicKey != "" {
+			sshPubKey = i.config.DomainUser.SSHPublicKey
+		}
+
+		// Create or update domain user
+		result, err := i.CreateDomainUser(i.config.PrimaryDomain, sshPubKey)
+		if err != nil {
+			return fmt.Errorf("failed to create domain user: %w", err)
+		}
+
+		// Store domain user in database
+		if err := i.StoreDomainUser(i.config.PrimaryDomain, result); err != nil {
+			return fmt.Errorf("failed to store domain user: %w", err)
+		}
+
+		// If private key was generated, display it to the user
+		if result.PrivateKey != "" {
+			fmt.Println("\n" + strings.Repeat("=", 80))
+			fmt.Println("⚠️  IMPORTANT: SSH Private Key Generated")
+			fmt.Println(strings.Repeat("=", 80))
+			fmt.Printf("\nA new SSH key pair has been generated for user: %s\n", result.Username)
+			fmt.Println("\nPrivate Key (save this securely - it will not be shown again):")
+			fmt.Println(strings.Repeat("-", 80))
+			fmt.Println(result.PrivateKey)
+			fmt.Println(strings.Repeat("-", 80))
+			fmt.Printf("\nTo connect to the server as this user:\n")
+			fmt.Printf("  1. Save the private key to a file (e.g., ~/.ssh/%s_key)\n", result.Username)
+			fmt.Printf("  2. Set proper permissions: chmod 600 ~/.ssh/%s_key\n", result.Username)
+			fmt.Printf("  3. Connect: ssh -i ~/.ssh/%s_key %s@%s\n", result.Username, result.Username, i.config.ServerIP)
+			fmt.Println("\n" + strings.Repeat("=", 80))
+		}
+
+		fmt.Printf("\n✅ Domain user %s created successfully\n", result.Username)
+		fmt.Printf("   • Access restricted to: /srv/%s/\n", i.config.PrimaryDomain)
+		fmt.Printf("   • Docker commands enabled for domain containers\n")
+		fmt.Printf("   • SSH key authentication only (no password)\n\n")
+	}
+
+	return nil
 }
 
 // Helper functions

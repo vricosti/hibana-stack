@@ -20,6 +20,14 @@ func New(cfg *config.Config) *Installer {
 	}
 }
 
+// NewInstaller creates a new Installer instance with database connection
+func NewInstaller(cfg *config.Config, db *sql.DB) *Installer {
+	return &Installer{
+		config: cfg,
+		db:     db,
+	}
+}
+
 // Close closes database connections
 func (i *Installer) Close() error {
 	if i.db != nil {

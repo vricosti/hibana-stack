@@ -1,0 +1,50 @@
+primary_domain: example.com
+server_ip: YOUR_SERVER_IP
+
+# DNS provider configuration (optional)
+# If configured, DNS records will be automatically created/updated
+# Supported providers: hostinger
+# dns_provider:
+#   name: hostinger
+#   api_token: YOUR_HOSTINGER_API_TOKEN
+
+subdomains:
+    - name: adm
+      role: webadmin
+    - name: mail
+      role: mailserver
+    - name: webmail
+      role: webmail
+    - name: www
+      role: website
+
+# Email accounts for the domain
+email_accounts:
+    - username: admin
+      password: CHANGE_THIS_PASSWORD
+      full_name: Administrator
+
+# Test email for sending test messages
+test_email: your-email@example.com
+
+# Domain user configuration (optional)
+# This creates a dedicated system user for managing the domain
+# The user will have access to /srv/example.com/ and limited docker commands
+domain_user:
+  # SSH key mode: "auto" or "manual"
+  # - auto: Automatically generate SSH key pair (private key will be displayed once)
+  # - manual: Use the SSH public key provided below
+  ssh_key_mode: auto
+
+  # SSH public key (required only in manual mode)
+  # Example:
+  # ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBtpvjKPQGY8mMxJZT... user@example.com"
+  # ssh_public_key: ""
+
+# Optional: System users with sudo access (for administrators)
+# system_users:
+#   - username: admin
+#     password: secure_password
+#     name: "System Administrator"
+#     sudoers: true
+#     ssh_pub_key: "ssh-rsa AAAAB3NzaC1yc2EA..."

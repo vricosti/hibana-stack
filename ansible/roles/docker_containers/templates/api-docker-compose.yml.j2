@@ -27,7 +27,7 @@ services:
       - jwt_secret
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=Host(`api.{{ primary_domain }}`)"
+      - "traefik.http.routers.api.rule=Host(`adm.{{ primary_domain }}`)"
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
       - "traefik.http.services.api.loadbalancer.server.port=3000"

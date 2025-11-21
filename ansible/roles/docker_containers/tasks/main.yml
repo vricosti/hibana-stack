@@ -221,17 +221,56 @@
     - 'logs'
     - 'secrets'
 
-- name: Create api application files
-  template:
-    src: "api-{{ item }}.j2"
-    dest: "/srv/{{ primary_domain }}/api/app/{{ item }}"
-    owner: root
-    group: root
-    mode: '0644'
-  loop:
-    - 'main.go'
-    - 'go.mod'
-    - 'Dockerfile'
+- name: Check if pre-built API exists
+  stat:
+    path: "{{ playbook_dir }}/api-build/hibana-api"
+  register: prebuilt_api
+
+- name: Check if pre-built frontend exists
+  stat:
+    path: "{{ playbook_dir }}/api-build/web"
+  register: prebuilt_frontend
+
+- name: Copy pre-built API and frontend (if available)
+  when: prebuilt_api.stat.exists and prebuilt_frontend.stat.exists
+  block:
+    - name: Copy pre-built API binary
+      copy:
+        src: "{{ playbook_dir }}/api-build/hibana-api"
+        dest: "/srv/{{ primary_domain }}/api/app/hibana-api"
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Copy pre-built frontend
+      synchronize:
+        src: "{{ playbook_dir }}/api-build/web/"
+        dest: "/srv/{{ primary_domain }}/api/app/web/"
+        delete: yes
+      delegate_to: localhost
+
+    - name: Copy pre-built Dockerfile
+      copy:
+        src: "{{ playbook_dir }}/api-build/Dockerfile"
+        dest: "/srv/{{ primary_domain }}/api/app/Dockerfile"
+        owner: root
+        group: root
+        mode: '0644'
+
+- name: Use placeholder API (if pre-built not available)
+  when: not prebuilt_api.stat.exists or not prebuilt_frontend.stat.exists
+  block:
+    - name: Create placeholder API files
+      template:
+        src: "api-{{ item }}.j2"
+        dest: "/srv/{{ primary_domain }}/api/app/{{ item }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - 'main.go'
+        - 'go.mod'
+        - 'Dockerfile'
 
 - name: Create api .env file
   template:

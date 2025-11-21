@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  api:
+    image: hibana-api:latest
+    container_name: hibana-api-{{ primary_domain | replace('.', '_') }}
+    restart: unless-stopped
+    networks:
+      - traefik-network
+    environment:
+      - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - DB_PASSWORD_FILE=/run/secrets/db_password
+    volumes:
+      - /etc/hibana/secrets:/run/secrets:ro
+      - ./logs:/var/log/hibana
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api-{{ primary_domain | replace('.', '_') }}.rule=Host(`adm.{{ primary_domain }}`)"
+      - "traefik.http.routers.api-{{ primary_domain | replace('.', '_') }}.entrypoints=websecure"
+      - "traefik.http.routers.api-{{ primary_domain | replace('.', '_') }}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api-{{ primary_domain | replace('.', '_') }}.loadbalancer.server.port=3000"
+
+networks:
+  traefik-network:
+    external: true

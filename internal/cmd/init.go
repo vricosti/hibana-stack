@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vricosti/hibana-stack/internal/ansible"
 	"github.com/vricosti/hibana-stack/internal/config"
+	"github.com/vricosti/hibana-stack/internal/dnsprovider"
 	"gopkg.in/yaml.v3"
 )
 
@@ -56,6 +57,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("✓ Configuration loaded for domain: %s\n", cfg.PrimaryDomain)
+
+	// Step 1.5: Configure DNS provider if specified
+	if cfg.DNSProvider != nil && cfg.DNSProvider.Name != "" && cfg.DNSProvider.APIToken != "" {
+		if err := dnsprovider.UpdateDNSRecords(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.PrimaryDomain, cfg.ServerIP); err != nil {
+			fmt.Printf("\n⚠️  Warning: Failed to configure DNS records automatically: %v\n", err)
+			fmt.Printf("Please add the following DNS records manually in your DNS provider:\n")
+			fmt.Printf("  • ns1.%s  A  %s  (TTL: 14400)\n", cfg.PrimaryDomain, cfg.ServerIP)
+			fmt.Printf("  • ns2.%s  A  %s  (TTL: 14400)\n\n", cfg.PrimaryDomain, cfg.ServerIP)
+		}
+	}
 
 	// Step 2: Check if running as root
 	if os.Geteuid() != 0 {
@@ -112,6 +123,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to copy roles: %w", err)
 	}
 	fmt.Println("✓ Roles copied")
+
+	// Step 7.5: Build API and frontend
+	fmt.Println("\n🔨 Building API and admin interface...")
+	if err := ansible.BuildAPIAndFrontend(workspaceDir); err != nil {
+		fmt.Printf("⚠️  Warning: Failed to build API/frontend: %v\n", err)
+		fmt.Println("   API will use placeholder. You can build manually later with:")
+		fmt.Println("   ./build-all.sh && docker-compose -f /srv/<domain>/api/docker-compose.yml up -d --build")
+	} else {
+		fmt.Println("✓ API and frontend built successfully")
+	}
 
 	// Step 8: Copy playbook
 	fmt.Println("\n📋 Copying Ansible playbook...")

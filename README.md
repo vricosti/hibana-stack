@@ -22,25 +22,72 @@ Hibana Stack is an open-source Go utility that automates the complete setup of a
 
 ## Quick Start
 
+**⚠️ Important:** Lancez `prepare-install.sh` AVANT l'installation pour builder l'API et le frontend !
+
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/vricosti/hibana-stack.git
 cd hibana-stack
 
-# Build the binary
-./build.sh
+# 2. Prepare the build (API + React frontend)
+./prepare-install.sh
 
-# Generate configuration skeleton
-sudo ./bin/hibana init --config hibana-config.yaml
+# 3. Generate configuration
+sudo ./bin/hibana init
 
-# Edit the configuration with your domain and settings
+# 4. Edit the configuration with your domain and settings
 nano hibana-config.yaml
 
-# Run the installer
-sudo ./bin/hibana init --config hibana-config.yaml
+# 5. Run the complete installation
+sudo ./bin/hibana init
 ```
 
-See [INSTALL.md](INSTALL.md) for detailed installation instructions.
+**Le script `prepare-install.sh` va :**
+- Compiler l'API Go
+- Vérifier si Node.js est installé
+- Proposer d'installer Node.js si absent
+- Builder le frontend React
+- Créer tous les artefacts nécessaires
+
+**Sans ce script**, l'installation utilisera une API placeholder basique.
+
+See [QUICK_START.md](QUICK_START.md) for detailed step-by-step guide.
+
+### Phase 2: Web Administration
+
+After Phase 1 installation, the admin interface is **automatically deployed** and available at:
+
+```
+https://adm.yourdomain.com
+```
+
+**Login credentials:**
+- Username: First email account from config (e.g., `admin`)
+- Password: Email account password
+
+**The admin interface is automatically:**
+- Built during installation (API + React frontend)
+- Deployed as a Docker container
+- Accessible via Traefik with automatic SSL
+- Running on port 3000 internally
+
+**Admin interface features:**
+- 📊 Dashboard with real-time statistics
+- 🌐 Domain management (add/edit/delete)
+- 📧 Email account management
+- 🌍 DNS record editor (A, AAAA, CNAME, MX, TXT, etc.)
+- 👤 Automatic domain user creation with SSH keys
+- 🔑 SSH key management (add/remove keys for domain users)
+- 🔒 JWT authentication
+
+**Manual rebuild (if needed):**
+```bash
+# Rebuild API and frontend
+./build-all.sh
+
+# Restart API container
+docker-compose -f /srv/yourdomain.com/api/docker-compose.yml up -d --build
+```
 
 ## Architecture
 
@@ -105,6 +152,73 @@ test_email: your-email@example.com
 
 See [config-example.yaml](config-example.yaml) for a complete example.
 
+### Domain User Management
+
+Hibana Stack can automatically create a dedicated system user for each domain with restricted SSH access. This user:
+
+- **Has access only to `/srv/domainname/`** for deploying applications
+- **Can restart and manage Docker containers** for the domain (limited sudo)
+- **SSH key authentication only** - no password login
+- **Member of `hibana-domains` group** for shared resources
+
+**Configuration options:**
+
+```yaml
+domain_user:
+  # Auto mode: Generate SSH key pair automatically
+  ssh_key_mode: auto
+
+  # Manual mode: Provide your own SSH public key
+  # ssh_key_mode: manual
+  # ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... user@host"
+```
+
+**Auto mode** generates an ED25519 SSH key pair and displays the private key once during installation. Save it securely!
+
+**Manual mode** requires you to provide your SSH public key in the configuration file.
+
+The domain user can:
+- Deploy applications in `/srv/domainname/`
+- Run `docker ps`, `docker logs`, `docker restart` on domain containers
+- Use `docker-compose` in `/srv/domainname/` directories
+- **Cannot** access other parts of the system or other domains
+
+### SSH Key Management
+
+After initial setup, you can manage SSH keys for your domain users via the admin interface:
+
+**Via Web Interface (https://adm.yourdomain.com):**
+1. Navigate to **Domains**
+2. Click **🔑 SSH Keys** for your domain
+3. Add, view, or remove SSH keys
+4. Each key can have a label for easy identification
+
+**Via SSH:**
+- Domain user home directory: `/srv/domainname/`
+- SSH keys location: `/srv/domainname/.ssh/authorized_keys`
+- Connect: `ssh username@server-ip`
+
+**Benefits:**
+- ✅ Multiple keys per domain (team access)
+- ✅ Easy key rotation without reinstallation
+- ✅ Key fingerprints for verification
+- ✅ Labels to identify which device/person uses each key
+- ✅ Revoke access instantly by removing a key
+
+**Deploying Your Applications:**
+```bash
+# Upload files with SCP
+scp -r dist/* username@server:/srv/domainname/www/src/
+
+# Or with rsync (faster for updates)
+rsync -avz --delete dist/ username@server:/srv/domainname/www/src/
+
+# Rebuild and restart containers
+ssh username@server
+cd /srv/domainname/www
+sudo docker-compose up -d --build
+```
+
 ## Project Status
 
 **Phase 1: ✅ COMPLETED**
@@ -114,13 +228,17 @@ See [config-example.yaml](config-example.yaml) for a complete example.
 - Traefik reverse proxy
 - Docker containers
 - Webmail (Roundcube)
+- Domain user management with SSH key authentication
 
-**Phase 2: 📋 PLANNED**
-- Web-based management interface
-- Multi-domain management UI
-- Email account management through web UI
-- DNS record editor
-- Monitoring dashboard
+**Phase 2: ✅ COMPLETED**
+- ✅ REST API backend (Go)
+- ✅ JWT authentication
+- ✅ Domain management API (CRUD operations)
+- ✅ Email account management API
+- ✅ DNS record management API
+- ✅ React-based admin interface
+- ✅ Responsive UI with modern design
+- ✅ Real-time statistics dashboard
 
 ## Requirements
 
