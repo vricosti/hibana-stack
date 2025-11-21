@@ -234,3 +234,24 @@ func (i *Installer) setSSHDirOwnership(username, sshDir string) error {
 
 	return nil
 }
+
+// EnsureHibanaDomainGroup creates the hibana-domains group if it doesn't exist
+func (i *Installer) EnsureHibanaDomainGroup() error {
+	// Check if group already exists
+	cmd := exec.Command("getent", "group", "hibana-domains")
+	if err := cmd.Run(); err == nil {
+		// Group exists
+		return nil
+	}
+
+	fmt.Println("  • Creating hibana-domains group...")
+
+	// Create the group
+	cmd = exec.Command("groupadd", "hibana-domains")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create group: %w, output: %s", err, string(output))
+	}
+
+	fmt.Println("    ✓ hibana-domains group created")
+	return nil
+}

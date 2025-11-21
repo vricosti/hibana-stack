@@ -1,0 +1,16 @@
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /app
+
+# Copy pre-built binary
+COPY hibana-api .
+
+# Copy web admin interface
+COPY web ./web
+
+# Expose API port
+EXPOSE 3000
+
+CMD ["./hibana-api", "--port", "3000", "--static", "./web"]

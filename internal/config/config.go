@@ -10,12 +10,20 @@ import (
 
 // Config represents the Hibana Stack configuration
 type Config struct {
-	PrimaryDomain string         `yaml:"primary_domain"`
-	ServerIP      string         `yaml:"server_ip"`
-	SystemUsers   []SystemUser   `yaml:"system_users,omitempty"`
-	Subdomains    []Subdomain    `yaml:"subdomains"`
-	EmailAccounts []EmailAccount `yaml:"email_accounts"`
-	TestEmail     string         `yaml:"test_email,omitempty"`
+	PrimaryDomain string              `yaml:"primary_domain"`
+	ServerIP      string              `yaml:"server_ip"`
+	DNSProvider   *DNSProviderConfig  `yaml:"dns_provider,omitempty"`
+	SystemUsers   []SystemUser        `yaml:"system_users,omitempty"`
+	DomainUser    *DomainUserConfig   `yaml:"domain_user,omitempty"`
+	Subdomains    []Subdomain         `yaml:"subdomains"`
+	EmailAccounts []EmailAccount      `yaml:"email_accounts"`
+	TestEmail     string              `yaml:"test_email,omitempty"`
+}
+
+// DNSProviderConfig represents DNS provider configuration
+type DNSProviderConfig struct {
+	Name     string `yaml:"name"`
+	APIToken string `yaml:"api_token"`
 }
 
 // Subdomain represents a subdomain configuration with its role
@@ -38,6 +46,12 @@ type EmailAccount struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 	FullName string `yaml:"full_name,omitempty"`
+}
+
+// DomainUserConfig represents domain user SSH configuration
+type DomainUserConfig struct {
+	SSHKeyMode   string `yaml:"ssh_key_mode"`              // "manual" or "auto"
+	SSHPublicKey string `yaml:"ssh_public_key,omitempty"`  // SSH public key (manual mode or auto with provided key)
 }
 
 // LoadConfig loads configuration from a YAML file

@@ -191,6 +191,26 @@ CREATE TABLE IF NOT EXISTS dkim_keys (
     UNIQUE(domain_id, selector)
 );
 
+CREATE TABLE IF NOT EXISTS domain_users (
+    id SERIAL PRIMARY KEY,
+    domain_id INTEGER REFERENCES domains(id) ON DELETE CASCADE,
+    username VARCHAR(64) NOT NULL UNIQUE,
+    ssh_public_key TEXT NOT NULL,
+    ssh_private_key_encrypted TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(domain_id)
+);
+
+CREATE TABLE IF NOT EXISTS ssh_keys (
+    id SERIAL PRIMARY KEY,
+    domain_id INTEGER REFERENCES domains(id) ON DELETE CASCADE,
+    fingerprint VARCHAR(255) NOT NULL,
+    label VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(domain_id, fingerprint)
+);
+
 CREATE TABLE IF NOT EXISTS configuration (
     key VARCHAR(255) PRIMARY KEY,
     value TEXT NOT NULL,
