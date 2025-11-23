@@ -211,21 +211,35 @@ func (s *SSHKeyService) RemoveKey(domainName, fingerprint string) error {
 	// Filter out the key with matching fingerprint
 	lines := strings.Split(string(content), "\n")
 	var newLines []string
+	removed := false
 
 	for _, line := range lines {
+		origLine := line
 		line = strings.TrimSpace(line)
+
 		if line == "" || strings.HasPrefix(line, "#") {
-			newLines = append(newLines, line)
+			newLines = append(newLines, origLine)
 			continue
 		}
 
 		keyFingerprint, err := calculateFingerprint(line)
-		if err != nil || keyFingerprint == fingerprint {
-			// Skip this key (remove it)
+		if err != nil {
+			// Keep lines we can't parse (invalid keys)
+			newLines = append(newLines, origLine)
 			continue
 		}
 
-		newLines = append(newLines, line)
+		if keyFingerprint == fingerprint {
+			// Skip this key (remove it)
+			removed = true
+			continue
+		}
+
+		newLines = append(newLines, origLine)
+	}
+
+	if !removed {
+		return fmt.Errorf("SSH key with fingerprint %s not found", fingerprint)
 	}
 
 	// Write back to file
