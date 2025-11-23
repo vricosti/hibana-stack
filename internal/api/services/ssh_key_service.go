@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/x509"
 	"database/sql"
 	"encoding/base64"
 	"encoding/pem"
@@ -333,17 +332,13 @@ func (s *SSHKeyService) GenerateKeyPair() (publicKey, privateKey string, err err
 	// Format public key
 	publicKeyStr := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 
-	// Format private key in PKCS8 format (OpenSSH compatible)
-	privKeyBytes, err := x509.MarshalPKCS8PrivateKey(privKey)
+	// Format private key in OpenSSH format
+	pemBlock, err := ssh.MarshalPrivateKey(privKey, "")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to marshal private key: %w", err)
 	}
 
-	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: privKeyBytes,
-	})
-
+	privateKeyPEM := pem.EncodeToMemory(pemBlock)
 	privateKeyStr := string(privateKeyPEM)
 
 	return publicKeyStr, privateKeyStr, nil
