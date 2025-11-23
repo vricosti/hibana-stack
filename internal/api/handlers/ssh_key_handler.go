@@ -35,7 +35,9 @@ func (h *SSHKeyHandler) HandleDomainSSHKeys(w http.ResponseWriter, r *http.Reque
 	// Check if there's a fingerprint in the path
 	if len(pathParts) > 5 {
 		// /api/v1/domains/:domain/ssh-keys/:fingerprint
-		fingerprint, err := url.PathUnescape(pathParts[5])
+		// Join remaining parts in case fingerprint contains '/'
+		fingerprintPath := strings.Join(pathParts[5:], "/")
+		fingerprint, err := url.PathUnescape(fingerprintPath)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid fingerprint")
 			return
