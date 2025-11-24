@@ -128,64 +128,17 @@
   register: www_result
 
 # ============================================================================
-# adm Service (Admin Interface)
+# adm Service - REMOVED: Now handled by API container
+# The API container (api-domain) serves both the REST API and React frontend
+# at adm.{{ primary_domain }}
 # ============================================================================
 
-- name: Create adm service directories
-  file:
-    path: "/srv/{{ primary_domain }}/adm/{{ item }}"
-    state: directory
-    mode: '0755'
-  loop:
-    - ''
-    - 'app'
-    - 'data'
-    - 'logs'
-
-- name: Copy adm Dockerfile
-  copy:
-    src: adm-Dockerfile
-    dest: "/srv/{{ primary_domain }}/adm/app/Dockerfile"
-    owner: root
-    group: root
-    mode: '0644'
-
-- name: Create adm index.html
-  template:
-    src: adm-index.html.j2
-    dest: "/srv/{{ primary_domain }}/adm/app/index.html"
-    owner: root
-    group: root
-    mode: '0644'
-
-- name: Create adm .env file
-  template:
-    src: adm-env.j2
-    dest: "/srv/{{ primary_domain }}/adm/.env"
-    owner: root
-    group: root
-    mode: '0644'
-
-- name: Create adm docker-compose
-  template:
-    src: adm-docker-compose.yml.j2
-    dest: "/srv/{{ primary_domain }}/adm/docker-compose.yml"
-    owner: root
-    group: root
-    mode: '0644'
-
-- name: Stop adm service (cleanup)
+# Stop any existing adm nginx container (cleanup from previous installations)
+- name: Stop legacy adm nginx service (cleanup)
   docker_compose:
     project_src: "/srv/{{ primary_domain }}/adm"
     state: absent
   ignore_errors: yes
-
-- name: Start adm service
-  docker_compose:
-    project_src: "/srv/{{ primary_domain }}/adm"
-    build: yes
-    state: present
-  register: adm_result
 
 # ============================================================================
 # webmail Service (Roundcube)
@@ -340,6 +293,19 @@
   copy:
     content: "{{ hibana_db_password_file.content | b64decode }}"
     dest: "/srv/{{ primary_domain }}/api/secrets/db_password"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Read pdns database password
+  slurp:
+    src: /etc/hibana/passwords/pdns
+  register: pdns_db_password_file
+
+- name: Create pdns password secret
+  copy:
+    content: "{{ pdns_db_password_file.content | b64decode }}"
+    dest: "/srv/{{ primary_domain }}/api/secrets/pdns_password"
     owner: root
     group: root
     mode: '0600'

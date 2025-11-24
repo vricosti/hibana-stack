@@ -1,0 +1,131 @@
+---
+# Create domain user for managing /srv/domain.com/
+# Username format: domain_com (dots replaced with underscores)
+
+- name: Read hibana database password from file
+  slurp:
+    src: /etc/hibana/passwords/hibana
+  register: hibana_password_file
+
+- name: Set hibana_db_password fact
+  set_fact:
+    hibana_db_password: "{{ hibana_password_file['content'] | b64decode | trim }}"
+
+- name: Set domain username
+  set_fact:
+    domain_username: "{{ primary_domain | replace('.', '_') }}"
+
+- name: Ensure hibana-domains group exists
+  group:
+    name: hibana-domains
+    state: present
+
+- name: Create domain user
+  user:
+    name: "{{ domain_username }}"
+    comment: "Domain user for {{ primary_domain }}"
+    shell: /bin/bash
+    home: "/srv/{{ primary_domain }}"
+    create_home: no
+    group: hibana-domains
+    groups: docker
+    append: yes
+    state: present
+
+- name: Set domain user password
+  user:
+    name: "{{ domain_username }}"
+    password: "{{ domain_user.password | password_hash('sha512') }}"
+  when: domain_user.password is defined and domain_user.password != ""
+  no_log: true
+
+- name: Ensure domain directory exists
+  file:
+    path: "/srv/{{ primary_domain }}"
+    state: directory
+    owner: "{{ domain_username }}"
+    group: hibana-domains
+    mode: '0755'
+
+- name: Create .ssh directory for domain user
+  file:
+    path: "/srv/{{ primary_domain }}/.ssh"
+    state: directory
+    owner: "{{ domain_username }}"
+    group: hibana-domains
+    mode: '0700'
+
+- name: Generate SSH key pair (auto mode)
+  openssh_keypair:
+    path: "/srv/{{ primary_domain }}/.ssh/id_ed25519"
+    type: ed25519
+    owner: "{{ domain_username }}"
+    group: hibana-domains
+    mode: '0600'
+    comment: "{{ domain_username }}@{{ primary_domain }}"
+  register: ssh_keypair
+  when: domain_user.ssh_key_mode == "auto" and (domain_user.ssh_public_key is not defined or domain_user.ssh_public_key == "")
+
+- name: Add generated public key to authorized_keys
+  authorized_key:
+    user: "{{ domain_username }}"
+    key: "{{ ssh_keypair.public_key }}"
+    path: "/srv/{{ primary_domain }}/.ssh/authorized_keys"
+    state: present
+  when: ssh_keypair.public_key is defined
+
+- name: Add provided SSH public key to authorized_keys (manual mode)
+  authorized_key:
+    user: "{{ domain_username }}"
+    key: "{{ domain_user.ssh_public_key }}"
+    path: "/srv/{{ primary_domain }}/.ssh/authorized_keys"
+    state: present
+  when: domain_user.ssh_public_key is defined and domain_user.ssh_public_key != ""
+
+- name: Configure sudoers for domain user
+  copy:
+    dest: "/etc/sudoers.d/hibana-{{ domain_username }}"
+    content: |
+      # Allow {{ domain_username }} to manage docker containers for {{ primary_domain }}
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f /srv/{{ primary_domain }}/* up -d --build
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f /srv/{{ primary_domain }}/* down
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f /srv/{{ primary_domain }}/* restart
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f /srv/{{ primary_domain }}/* logs *
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker logs *{{ primary_domain | replace('.', '-') }}*
+    owner: root
+    group: root
+    mode: '0440'
+    validate: 'visudo -cf %s'
+
+- name: Insert domain user into database
+  postgresql_query:
+    db: hibana
+    login_host: localhost
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    query: |
+      INSERT INTO domain_users (domain_id, username, ssh_public_key)
+      SELECT d.id, '{{ domain_username }}', '{{ ssh_keypair.public_key | default(domain_user.ssh_public_key | default("")) }}'
+      FROM domains d
+      WHERE d.name = '{{ primary_domain }}'
+      ON CONFLICT (domain_id) DO UPDATE
+      SET username = EXCLUDED.username,
+          ssh_public_key = EXCLUDED.ssh_public_key,
+          updated_at = CURRENT_TIMESTAMP
+
+- name: Display SSH private key (save it securely!)
+  debug:
+    msg: |
+
+      ========================================
+      🔑 SSH PRIVATE KEY FOR {{ domain_username }}
+      ========================================
+
+      Save this key securely! It will not be shown again.
+
+      {{ ssh_keypair.private_key | default('(Key was not generated - manual mode or already exists)') }}
+
+      To connect: ssh {{ domain_username }}@{{ server_ip }}
+      Or with password: {{ domain_user.password | default('(no password set)') }}
+      ========================================
+  when: ssh_keypair.private_key is defined

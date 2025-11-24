@@ -1,15 +1,19 @@
 package cmd
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/vricosti/hibana-stack/internal/ansible"
 	"github.com/vricosti/hibana-stack/internal/config"
 	"github.com/vricosti/hibana-stack/internal/dnsprovider"
-	"gopkg.in/yaml.v3"
 )
+
+const templateFileName = "hibana-config.skel.yaml"
 
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -37,16 +41,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
 		fmt.Printf("⚠️  Configuration file not found: %s\n", cfgFile)
-		fmt.Println("Creating skeleton configuration file...")
+		fmt.Println("Creating configuration file from template...")
 
-		skeleton := config.GenerateSkeleton()
-		data, _ := yaml.Marshal(skeleton)
-
-		if err := os.WriteFile(cfgFile, data, 0600); err != nil {
-			return fmt.Errorf("failed to create config file: %w", err)
+		if err := generateConfigFromTemplate(cfgFile); err != nil {
+			return err
 		}
 
-		fmt.Printf("✓ Configuration skeleton created: %s\n", cfgFile)
 		fmt.Println("\nPlease edit this file with your domain and email settings, then run 'sudo hibana init' again.")
 		return nil
 	}
@@ -180,4 +180,63 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// generateConfigFromTemplate creates a config file from the template with random passwords
+func generateConfigFromTemplate(outputFile string) error {
+	// Check if template file exists in current directory
+	if _, err := os.Stat(templateFileName); os.IsNotExist(err) {
+		return fmt.Errorf("template file not found: %s (run this command from the hibana-stack directory)", templateFileName)
+	}
+
+	// Read template file
+	templateData, err := os.ReadFile(templateFileName)
+	if err != nil {
+		return fmt.Errorf("failed to read template file: %w", err)
+	}
+
+	// Generate random passwords
+	webadminPassword := generateRandomPassword(16)
+	emailPassword := generateRandomPassword(16)
+	domainUserPassword := generateRandomPassword(16)
+
+	// Replace placeholders with random passwords
+	content := string(templateData)
+	content = strings.Replace(content, "__RANDOM_WEBADMIN_PASSWORD__", webadminPassword, 1)
+	content = strings.Replace(content, "__RANDOM_EMAIL_PASSWORD__", emailPassword, 1)
+	content = strings.Replace(content, "__RANDOM_DOMAIN_USER_PASSWORD__", domainUserPassword, 1)
+
+	// Write to output file
+	if err := os.WriteFile(outputFile, []byte(content), 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	fmt.Printf("✓ Configuration file created: %s\n\n", outputFile)
+	fmt.Println("Generated credentials:")
+	fmt.Printf("  • Web admin password: %s\n", webadminPassword)
+	fmt.Printf("  • Email account password: %s\n", emailPassword)
+	fmt.Printf("  • Domain user password: %s\n", domainUserPassword)
+
+	return nil
+}
+
+// generateRandomPassword generates a random password of the specified length
+func generateRandomPassword(length int) string {
+	// Generate random bytes
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "HibanaDefaultPwd123!"
+	}
+
+	// Encode to base64 and clean up
+	password := base64.URLEncoding.EncodeToString(bytes)
+	password = strings.ReplaceAll(password, "-", "")
+	password = strings.ReplaceAll(password, "_", "")
+	password = strings.ReplaceAll(password, "=", "")
+
+	if len(password) > length {
+		password = password[:length]
+	}
+
+	return password
 }

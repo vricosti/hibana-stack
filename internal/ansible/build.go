@@ -21,18 +21,19 @@ func BuildAPIAndFrontend(workspaceDir string) error {
 		return fmt.Errorf("failed to create build directory: %w", err)
 	}
 
-	// Step 1: Build Go API binary
+	// Step 1: Build Go API binary (static for Alpine)
 	fmt.Println("  → Building Go API...")
 	apiBinary := filepath.Join(buildDir, "hibana-api")
-	buildCmd := exec.Command("go", "build", "-o", apiBinary, "./cmd/api")
+	buildCmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags=-s -w", "-o", apiBinary, "./cmd/api")
 	buildCmd.Dir = projectRoot
+	buildCmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
 
 	if err := buildCmd.Run(); err != nil {
 		return fmt.Errorf("failed to build API: %w", err)
 	}
-	fmt.Println("    ✓ API binary built")
+	fmt.Println("    ✓ API binary built (static)")
 
 	// Step 2: Build React frontend
 	fmt.Println("  → Building React admin interface...")

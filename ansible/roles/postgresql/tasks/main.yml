@@ -157,6 +157,17 @@
         UNIQUE(domain_id, selector)
       );
 
+      CREATE TABLE IF NOT EXISTS domain_users (
+        id SERIAL PRIMARY KEY,
+        domain_id INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+        username VARCHAR(255) NOT NULL,
+        ssh_public_key TEXT,
+        ssh_private_key_encrypted TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(domain_id)
+      );
+
       CREATE TABLE IF NOT EXISTS installation_state (
         id SERIAL PRIMARY KEY,
         step VARCHAR(255) NOT NULL,
@@ -167,6 +178,13 @@
         started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         completed_at TIMESTAMP,
         error_message TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS webadmin_users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
       -- Grant all privileges to hibana user
@@ -299,3 +317,16 @@
     content: "{{ pdns_db_password }}"
     dest: /etc/hibana/passwords/pdns
     mode: '0600'
+
+- name: Insert webadmin user
+  postgresql_query:
+    db: hibana
+    login_host: localhost
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    query: |
+      INSERT INTO webadmin_users (username, password_hash)
+      VALUES ('{{ webadmin.username }}', '{{ webadmin.password | password_hash("sha512") }}')
+      ON CONFLICT (username) DO UPDATE
+      SET password_hash = EXCLUDED.password_hash
+  when: webadmin is defined and webadmin.username is defined

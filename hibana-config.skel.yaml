@@ -18,19 +18,29 @@ subdomains:
     - name: www
       role: website
 
+# Web admin credentials (for adm.example.com)
+# Used to login to the administration interface
+webadmin:
+    username: admin
+    password: __RANDOM_WEBADMIN_PASSWORD__
+
 # Email accounts for the domain
 email_accounts:
     - username: admin
-      password: CHANGE_THIS_PASSWORD
+      password: __RANDOM_EMAIL_PASSWORD__
       full_name: Administrator
 
 # Test email for sending test messages
 test_email: your-email@example.com
 
-# Domain user configuration (optional)
-# This creates a dedicated system user for managing the domain
+# Domain user configuration
+# Creates a dedicated system user for managing the domain (e.g., example_com)
 # The user will have access to /srv/example.com/ and limited docker commands
+# Can login via SSH with password or SSH key
 domain_user:
+  # Password for SSH login (auto-generated)
+  password: __RANDOM_DOMAIN_USER_PASSWORD__
+
   # SSH key mode: "auto" or "manual"
   # - auto: Automatically generate SSH key pair (private key will be displayed once)
   # - manual: Use the SSH public key provided below

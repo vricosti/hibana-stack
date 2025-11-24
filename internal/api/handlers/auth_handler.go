@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
+	"github.com/GehirnInc/crypt"
+	_ "github.com/GehirnInc/crypt/sha512_crypt"
 	"github.com/vricosti/hibana-stack/internal/api/auth"
 	"github.com/vricosti/hibana-stack/internal/api/models"
 	"github.com/vricosti/hibana-stack/internal/api/ratelimit"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // AuthHandler handles authentication requests
@@ -74,16 +76,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate credentials against email accounts table
-	// For simplicity, we're using email accounts as admin users
-	// In production, you'd have a separate admin_users table
+	// Validate credentials against webadmin_users table
 	var userID int
 	var passwordHash string
-	query := `SELECT ea.id, ea.password_hash
-	          FROM email_accounts ea
-	          JOIN domains d ON ea.domain_id = d.id
-	          WHERE ea.username = $1
-	          ORDER BY d.created_at ASC LIMIT 1`
+	query := `SELECT id, password_hash FROM webadmin_users WHERE username = $1`
 
 	err := h.db.QueryRow(query, req.Username).Scan(&userID, &passwordHash)
 	if err == sql.ErrNoRows {
@@ -100,9 +96,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify password
-	err = bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password))
-	if err != nil {
+	// Verify password using SHA512 crypt (compatible with Ansible password_hash)
+	if !verifySHA512Password(req.Password, passwordHash) {
 		// Record failed attempt
 		h.loginLimiter.RecordFailedAttempt(clientIP)
 		attemptCount := h.loginLimiter.GetAttemptCount(clientIP)
@@ -152,4 +147,18 @@ func respondError(w http.ResponseWriter, code int, message string) {
 		Success: false,
 		Error:   message,
 	})
+}
+
+// verifySHA512Password verifies a password against a SHA512 crypt hash
+// This is compatible with Ansible's password_hash('sha512') filter
+func verifySHA512Password(password, hash string) bool {
+	// SHA512 crypt hashes start with $6$
+	if !strings.HasPrefix(hash, "$6$") {
+		return false
+	}
+
+	// Use the crypt library to verify
+	crypter := crypt.SHA512.New()
+	err := crypter.Verify(hash, []byte(password))
+	return err == nil
 }

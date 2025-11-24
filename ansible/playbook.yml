@@ -36,6 +36,10 @@
     - role: traefik
       tags: [traefik, proxy]
 
+    - role: domain_user
+      tags: [users, domain_user]
+      when: domain_user is defined
+
     - role: docker_containers
       tags: [docker, containers, web]
 
