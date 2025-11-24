@@ -150,8 +150,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Step 10: Configure DNS provider if specified (after successful installation)
 	if cfg.DNSProvider != nil && cfg.DNSProvider.Name != "" && cfg.DNSProvider.APIToken != "" {
-		// For now, simulate DNS updates (will be enabled in production)
-		simulate := true
+		// Automatically configure DNS records
+		simulate := false
 		if err := dnsprovider.UpdateDNSRecords(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.PrimaryDomain, cfg.ServerIP, simulate); err != nil {
 			fmt.Printf("\n⚠️  Warning: DNS provider configuration failed: %v\n", err)
 			fmt.Printf("Please configure DNS records manually:\n")
@@ -176,8 +176,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if cfg.DNSProvider == nil || cfg.DNSProvider.Name == "" {
 		fmt.Println("Don't forget to update your domain's nameservers to point to this server!")
 	} else {
-		fmt.Println("Note: DNS records are currently in simulation mode.")
-		fmt.Println("      Set simulate=false in code to enable automatic DNS updates.")
+		fmt.Println("DNS records have been automatically configured via your DNS provider.")
 	}
 
 	return nil
