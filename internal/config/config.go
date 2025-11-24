@@ -16,8 +16,15 @@ type Config struct {
 	SystemUsers   []SystemUser        `yaml:"system_users,omitempty"`
 	DomainUser    *DomainUserConfig   `yaml:"domain_user,omitempty"`
 	Subdomains    []Subdomain         `yaml:"subdomains"`
+	WebAdmin      *WebAdminConfig     `yaml:"webadmin,omitempty"`
 	EmailAccounts []EmailAccount      `yaml:"email_accounts"`
 	TestEmail     string              `yaml:"test_email,omitempty"`
+}
+
+// WebAdminConfig represents web administration interface credentials
+type WebAdminConfig struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 // DNSProviderConfig represents DNS provider configuration
@@ -50,6 +57,7 @@ type EmailAccount struct {
 
 // DomainUserConfig represents domain user SSH configuration
 type DomainUserConfig struct {
+	Password     string `yaml:"password,omitempty"`        // Password for SSH login
 	SSHKeyMode   string `yaml:"ssh_key_mode"`              // "manual" or "auto"
 	SSHPublicKey string `yaml:"ssh_public_key,omitempty"`  // SSH public key (manual mode or auto with provided key)
 }

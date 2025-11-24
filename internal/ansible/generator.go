@@ -65,6 +65,15 @@ system_users:
 {{- end }}
 {{- end }}
 
+{{- if .DomainUser }}
+domain_user:
+  password: "{{ .DomainUser.Password }}"
+  ssh_key_mode: "{{ .DomainUser.SSHKeyMode }}"
+  {{- if .DomainUser.SSHPublicKey }}
+  ssh_public_key: "{{ .DomainUser.SSHPublicKey }}"
+  {{- end }}
+{{- end }}
+
 subdomains:
 {{- range .Subdomains }}
   - name: {{ .Name }}
@@ -80,6 +89,12 @@ email_accounts:
 
 {{- if .TestEmail }}
 test_email: {{ .TestEmail }}
+{{- end }}
+
+{{- if .WebAdmin }}
+webadmin:
+  username: "{{ .WebAdmin.Username }}"
+  password: "{{ .WebAdmin.Password }}"
 {{- end }}
 `
 

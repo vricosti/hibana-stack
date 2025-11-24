@@ -15,6 +15,9 @@ var rootCmd = &cobra.Command{
 - Mail server with DMARC and DKIM configuration
 - Traefik reverse proxy for multi-domain hosting with automatic SSL
 - Web admin interface for easy domain and mail management`,
+	CompletionOptions: cobra.CompletionOptions{
+		DisableDefaultCmd: true,
+	},
 }
 
 func Execute() error {
