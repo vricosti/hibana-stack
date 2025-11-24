@@ -29,7 +29,7 @@ check_go() {
 build() {
     echo "Building hibana..."
     check_go
-    go build -o bin/hibana ./cmd/hibana
+    go build -buildvcs=false -o bin/hibana ./cmd/hibana
     echo -e "${GREEN}✓${NC} Build successful: bin/hibana"
 }
 
@@ -71,7 +71,7 @@ test() {
 dev() {
     echo "Building with race detection..."
     check_go
-    go build -race -o bin/hibana ./cmd/hibana
+    go build -buildvcs=false -race -o bin/hibana ./cmd/hibana
     echo -e "${GREEN}✓${NC} Development build created at bin/hibana"
 }
 
@@ -79,7 +79,7 @@ dev() {
 release() {
     echo "Building release binary..."
     check_go
-    CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/hibana ./cmd/hibana
+    CGO_ENABLED=0 go build -buildvcs=false -ldflags="-s -w" -o bin/hibana ./cmd/hibana
     echo -e "${GREEN}✓${NC} Release binary created at bin/hibana"
 }
 
