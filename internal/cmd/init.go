@@ -58,13 +58,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("✓ Configuration loaded for domain: %s\n", cfg.PrimaryDomain)
 
-	// Step 1.5: Configure DNS provider if specified
+	// Step 1.5: Verify DNS provider if specified
 	if cfg.DNSProvider != nil && cfg.DNSProvider.Name != "" && cfg.DNSProvider.APIToken != "" {
-		if err := dnsprovider.UpdateDNSRecords(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.PrimaryDomain, cfg.ServerIP); err != nil {
-			fmt.Printf("\n⚠️  Warning: Failed to configure DNS records automatically: %v\n", err)
-			fmt.Printf("Please add the following DNS records manually in your DNS provider:\n")
-			fmt.Printf("  • ns1.%s  A  %s  (TTL: 14400)\n", cfg.PrimaryDomain, cfg.ServerIP)
-			fmt.Printf("  • ns2.%s  A  %s  (TTL: 14400)\n\n", cfg.PrimaryDomain, cfg.ServerIP)
+		if err := dnsprovider.VerifyDomainOwnership(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.PrimaryDomain); err != nil {
+			return fmt.Errorf("DNS provider verification failed: %w\n\nPlease verify:\n  • Your API token is valid\n  • Domain %s is managed by your %s account\n  • The API has proper permissions", err, cfg.PrimaryDomain, cfg.DNSProvider.Name)
 		}
 	}
 
@@ -151,6 +148,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("playbook execution failed: %w", err)
 	}
 
+	// Step 10: Configure DNS provider if specified (after successful installation)
+	if cfg.DNSProvider != nil && cfg.DNSProvider.Name != "" && cfg.DNSProvider.APIToken != "" {
+		// For now, simulate DNS updates (will be enabled in production)
+		simulate := true
+		if err := dnsprovider.UpdateDNSRecords(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.PrimaryDomain, cfg.ServerIP, simulate); err != nil {
+			fmt.Printf("\n⚠️  Warning: DNS provider configuration failed: %v\n", err)
+			fmt.Printf("Please configure DNS records manually:\n")
+			fmt.Printf("  • ns1.%s  A  %s  (TTL: 14400)\n", cfg.PrimaryDomain, cfg.ServerIP)
+			fmt.Printf("  • ns2.%s  A  %s  (TTL: 14400)\n", cfg.PrimaryDomain, cfg.ServerIP)
+			fmt.Printf("  • Update nameservers to: ns1.%s, ns2.%s\n\n", cfg.PrimaryDomain, cfg.PrimaryDomain)
+		}
+	}
+
 	// Final summary
 	fmt.Println("\n" + string(make([]byte, 80)))
 	fmt.Println("🎉 Hibana Stack installation complete!")
@@ -162,7 +172,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  • Website:    https://www.%s\n", cfg.PrimaryDomain)
 	fmt.Printf("  • Mail:       mail.%s\n", cfg.PrimaryDomain)
 	fmt.Println()
-	fmt.Println("Don't forget to update your domain's nameservers to point to this server!")
+
+	if cfg.DNSProvider == nil || cfg.DNSProvider.Name == "" {
+		fmt.Println("Don't forget to update your domain's nameservers to point to this server!")
+	} else {
+		fmt.Println("Note: DNS records are currently in simulation mode.")
+		fmt.Println("      Set simulate=false in code to enable automatic DNS updates.")
+	}
 
 	return nil
 }

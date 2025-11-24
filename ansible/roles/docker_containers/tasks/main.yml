@@ -55,6 +55,12 @@
     owner: root
     group: root
 
+- name: Stop Traefik service (cleanup)
+  docker_compose:
+    project_src: /srv/traefik
+    state: absent
+  ignore_errors: yes
+
 - name: Start Traefik service
   docker_compose:
     project_src: /srv/traefik
@@ -107,6 +113,12 @@
     owner: root
     group: root
     mode: '0644'
+
+- name: Stop www service (cleanup)
+  docker_compose:
+    project_src: "/srv/{{ primary_domain }}/www"
+    state: absent
+  ignore_errors: yes
 
 - name: Start www service
   docker_compose:
@@ -162,6 +174,12 @@
     group: root
     mode: '0644'
 
+- name: Stop adm service (cleanup)
+  docker_compose:
+    project_src: "/srv/{{ primary_domain }}/adm"
+    state: absent
+  ignore_errors: yes
+
 - name: Start adm service
   docker_compose:
     project_src: "/srv/{{ primary_domain }}/adm"
@@ -198,6 +216,12 @@
     owner: root
     group: root
     mode: '0644'
+
+- name: Stop webmail service (cleanup)
+  docker_compose:
+    project_src: "/srv/{{ primary_domain }}/webmail"
+    state: absent
+  ignore_errors: yes
 
 - name: Start webmail service
   docker_compose:
@@ -320,6 +344,12 @@
     group: root
     mode: '0600'
 
+- name: Stop api service (cleanup)
+  docker_compose:
+    project_src: "/srv/{{ primary_domain }}/api"
+    state: absent
+  ignore_errors: yes
+
 - name: Start api service
   docker_compose:
     project_src: "/srv/{{ primary_domain }}/api"
@@ -334,11 +364,11 @@
 - name: Display service deployment results
   debug:
     msg:
-      - "Traefik: {{ traefik_result.state }}"
-      - "WWW: {{ www_result.state }}"
-      - "Admin: {{ adm_result.state }}"
-      - "Webmail: {{ webmail_result.state }}"
-      - "API: {{ api_result.state }}"
+      - "Traefik: {{ 'deployed' if traefik_result.changed else 'already running' }}"
+      - "WWW: {{ 'deployed' if www_result.changed else 'already running' }}"
+      - "Admin: {{ 'deployed' if adm_result.changed else 'already running' }}"
+      - "Webmail: {{ 'deployed' if webmail_result.changed else 'already running' }}"
+      - "API: {{ 'deployed' if api_result.changed else 'already running' }}"
 
 - name: Display service URLs
   debug:
