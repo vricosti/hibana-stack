@@ -10,7 +10,9 @@ import (
 )
 
 const (
-	hostingerAPIURL = "https://api.hostinger.com/dns/v1"
+	hostingerAPIBaseURL    = "https://developers.hostinger.com"
+	hostingerDNSAPIURL     = "https://developers.hostinger.com/api/dns/v1"
+	hostingerDomainsAPIURL = "https://developers.hostinger.com/api/domains/v1"
 )
 
 // HostingerProvider implements DNS provider for Hostinger
@@ -27,12 +29,6 @@ func NewHostingerProvider(apiToken string) *HostingerProvider {
 	}
 }
 
-// HostingerZone represents a DNS zone in Hostinger
-type HostingerZone struct {
-	ID     string `json:"id"`
-	Domain string `json:"domain"`
-}
-
 // HostingerRecord represents a DNS record in Hostinger
 type HostingerRecord struct {
 	ID      string `json:"id,omitempty"`
@@ -42,16 +38,66 @@ type HostingerRecord struct {
 	TTL     int    `json:"ttl"`
 }
 
-// EnsureNSRecords ensures that ns1 and ns2 A records exist for the domain
-func (h *HostingerProvider) EnsureNSRecords(domain, serverIP string) error {
-	// Get zone ID for the domain
-	zoneID, err := h.getZoneID(domain)
+// HostingerDomain represents a domain in the portfolio
+type HostingerDomain struct {
+	ID        int      `json:"id"`
+	Domain    string   `json:"domain"`
+	Type      string   `json:"type"`
+	Status    string   `json:"status"`
+	CreatedAt string   `json:"created_at"`
+	ExpiresAt string   `json:"expires_at"`
+}
+
+// VerifyDomainManaged checks if the domain is managed by this Hostinger account
+func (h *HostingerProvider) VerifyDomainManaged(domain string) error {
+	url := hostingerDomainsAPIURL + "/portfolio"
+
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get zone ID for %s: %w", domain, err)
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
+	req.Header.Set("Authorization", "Bearer "+h.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch portfolio: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("authentication failed: invalid API token")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// The API returns an array of domains directly, not wrapped in an object
+	var domains []HostingerDomain
+	if err := json.Unmarshal(body, &domains); err != nil {
+		return fmt.Errorf("failed to parse portfolio response: %w", err)
+	}
+
+	// Check if domain is in the portfolio
+	for _, d := range domains {
+		if d.Domain == domain {
+			fmt.Printf("✓ Domain %s is managed by this Hostinger account\n", domain)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("domain %s is not managed by this Hostinger account", domain)
+}
+
+// EnsureNSRecords ensures that ns1 and ns2 A records exist for the domain
+func (h *HostingerProvider) EnsureNSRecords(domain, serverIP string) error {
 	// Get existing records
-	existingRecords, err := h.getRecords(zoneID)
+	existingRecords, err := h.getRecords(domain)
 	if err != nil {
 		return fmt.Errorf("failed to get existing records: %w", err)
 	}
@@ -70,81 +116,52 @@ func (h *HostingerProvider) EnsureNSRecords(domain, serverIP string) error {
 	}
 
 	// Create missing records
+	newRecords := []HostingerRecord{}
+
 	if !hasNS1 {
-		if err := h.createRecord(zoneID, HostingerRecord{
+		newRecords = append(newRecords, HostingerRecord{
 			Type:    "A",
 			Name:    "ns1",
 			Content: serverIP,
 			TTL:     14400,
-		}); err != nil {
-			return fmt.Errorf("failed to create ns1 record: %w", err)
-		}
-		fmt.Println("✓ Created DNS record: ns1 A " + serverIP)
-	} else {
-		fmt.Println("✓ DNS record already exists: ns1 A")
+		})
 	}
 
 	if !hasNS2 {
-		if err := h.createRecord(zoneID, HostingerRecord{
+		newRecords = append(newRecords, HostingerRecord{
 			Type:    "A",
 			Name:    "ns2",
 			Content: serverIP,
 			TTL:     14400,
-		}); err != nil {
-			return fmt.Errorf("failed to create ns2 record: %w", err)
+		})
+	}
+
+	if len(newRecords) > 0 {
+		if err := h.updateRecords(domain, newRecords); err != nil {
+			return fmt.Errorf("failed to create NS records: %w", err)
 		}
-		fmt.Println("✓ Created DNS record: ns2 A " + serverIP)
-	} else {
+
+		if !hasNS1 {
+			fmt.Println("✓ Created DNS record: ns1 A " + serverIP)
+		}
+		if !hasNS2 {
+			fmt.Println("✓ Created DNS record: ns2 A " + serverIP)
+		}
+	}
+
+	if hasNS1 {
+		fmt.Println("✓ DNS record already exists: ns1 A")
+	}
+	if hasNS2 {
 		fmt.Println("✓ DNS record already exists: ns2 A")
 	}
 
 	return nil
 }
 
-// getZoneID retrieves the zone ID for a given domain
-func (h *HostingerProvider) getZoneID(domain string) (string, error) {
-	req, err := http.NewRequest("GET", hostingerAPIURL+"/zones", nil)
-	if err != nil {
-		return "", err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+h.apiToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := h.client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var zones []HostingerZone
-	if err := json.Unmarshal(body, &zones); err != nil {
-		return "", fmt.Errorf("failed to parse zones response: %w", err)
-	}
-
-	// Find the zone for the domain
-	for _, zone := range zones {
-		if zone.Domain == domain {
-			return zone.ID, nil
-		}
-	}
-
-	return "", fmt.Errorf("zone not found for domain %s", domain)
-}
-
-// getRecords retrieves all DNS records for a zone
-func (h *HostingerProvider) getRecords(zoneID string) ([]HostingerRecord, error) {
-	req, err := http.NewRequest("GET", hostingerAPIURL+"/zones/"+zoneID+"/records", nil)
+// getRecords retrieves all DNS records for a domain
+func (h *HostingerProvider) getRecords(domain string) ([]HostingerRecord, error) {
+	req, err := http.NewRequest("GET", hostingerDNSAPIURL+"/zones/"+domain, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -176,14 +193,14 @@ func (h *HostingerProvider) getRecords(zoneID string) ([]HostingerRecord, error)
 	return records, nil
 }
 
-// createRecord creates a new DNS record in the zone
-func (h *HostingerProvider) createRecord(zoneID string, record HostingerRecord) error {
-	payload, err := json.Marshal(record)
+// updateRecords updates DNS records for the domain (adds new records)
+func (h *HostingerProvider) updateRecords(domain string, records []HostingerRecord) error {
+	payload, err := json.Marshal(records)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest("POST", hostingerAPIURL+"/zones/"+zoneID+"/records", bytes.NewBuffer(payload))
+	req, err := http.NewRequest("PUT", hostingerDNSAPIURL+"/zones/"+domain, bytes.NewBuffer(payload))
 	if err != nil {
 		return err
 	}
@@ -197,7 +214,7 @@ func (h *HostingerProvider) createRecord(zoneID string, record HostingerRecord) 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
@@ -205,8 +222,74 @@ func (h *HostingerProvider) createRecord(zoneID string, record HostingerRecord) 
 	return nil
 }
 
+// UpdateNameservers updates the domain's nameservers to use ns1 and ns2
+func (h *HostingerProvider) UpdateNameservers(domain string) error {
+	nameservers := []string{
+		fmt.Sprintf("ns1.%s", domain),
+		fmt.Sprintf("ns2.%s", domain),
+	}
+
+	payload := map[string][]string{
+		"nameservers": nameservers,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("PUT", hostingerDomainsAPIURL+"/"+domain+"/nameservers", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+h.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	fmt.Printf("✓ Updated nameservers to ns1.%s and ns2.%s\n", domain, domain)
+	return nil
+}
+
+// VerifyDomainOwnership verifies that the domain is managed by the DNS provider
+func VerifyDomainOwnership(providerName, apiToken, domain string) error {
+	if providerName == "" || apiToken == "" {
+		// DNS provider not configured, skip
+		return nil
+	}
+
+	// Normalize provider name (case insensitive)
+	providerName = strings.ToLower(strings.TrimSpace(providerName))
+
+	fmt.Println("\n🌐 Verifying DNS provider configuration...")
+
+	switch providerName {
+	case "hostinger":
+		provider := NewHostingerProvider(apiToken)
+		fmt.Println("→ Checking domain ownership...")
+		if err := provider.VerifyDomainManaged(domain); err != nil {
+			return fmt.Errorf("domain verification failed: %w", err)
+		}
+		fmt.Println("✓ DNS provider verification complete")
+		return nil
+	default:
+		return fmt.Errorf("unsupported DNS provider: %s", providerName)
+	}
+}
+
 // UpdateDNSRecords updates DNS records for the given domain and server IP
-func UpdateDNSRecords(providerName, apiToken, domain, serverIP string) error {
+// If simulate is true, it will only log what would be done without making actual API calls
+func UpdateDNSRecords(providerName, apiToken, domain, serverIP string, simulate bool) error {
 	if providerName == "" || apiToken == "" {
 		// DNS provider not configured, skip
 		return nil
@@ -220,10 +303,62 @@ func UpdateDNSRecords(providerName, apiToken, domain, serverIP string) error {
 	switch providerName {
 	case "hostinger":
 		provider := NewHostingerProvider(apiToken)
-		if err := provider.EnsureNSRecords(domain, serverIP); err != nil {
-			return err
+
+		if simulate {
+			// Simulation mode - fetch existing records and show what would be done
+			fmt.Println("→ [SIMULATION] Fetching existing DNS records...")
+			existingRecords, err := provider.getRecords(domain)
+			if err != nil {
+				fmt.Printf("  ⚠ Warning: Could not fetch existing records: %v\n", err)
+				fmt.Println("→ [SIMULATION] Would create NS records:")
+				fmt.Printf("  • ns1.%s A %s (TTL: 14400)\n", domain, serverIP)
+				fmt.Printf("  • ns2.%s A %s (TTL: 14400)\n", domain, serverIP)
+			} else {
+				// Check for existing ns1 and ns2 records
+				var ns1Record, ns2Record *HostingerRecord
+				for i := range existingRecords {
+					if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns1" {
+						ns1Record = &existingRecords[i]
+					}
+					if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns2" {
+						ns2Record = &existingRecords[i]
+					}
+				}
+
+				fmt.Println("→ [SIMULATION] NS record status:")
+				if ns1Record != nil {
+					fmt.Printf("  ✓ ns1.%s A %s (TTL: %d) - already exists, ignoring\n", domain, ns1Record.Content, ns1Record.TTL)
+				} else {
+					fmt.Printf("  • ns1.%s A %s (TTL: 14400) - would create\n", domain, serverIP)
+				}
+
+				if ns2Record != nil {
+					fmt.Printf("  ✓ ns2.%s A %s (TTL: %d) - already exists, ignoring\n", domain, ns2Record.Content, ns2Record.TTL)
+				} else {
+					fmt.Printf("  • ns2.%s A %s (TTL: 14400) - would create\n", domain, serverIP)
+				}
+			}
+
+			fmt.Println("→ [SIMULATION] Nameserver configuration:")
+			fmt.Printf("  • Would ensure nameservers: ns1.%s, ns2.%s\n", domain, domain)
+			fmt.Println("✓ DNS provider configuration simulated successfully")
+			return nil
 		}
-		fmt.Println("✓ DNS records configured successfully")
+
+		// Real mode - make actual API calls
+		// Step 1: Create ns1 and ns2 A records
+		fmt.Println("→ Configuring NS records...")
+		if err := provider.EnsureNSRecords(domain, serverIP); err != nil {
+			return fmt.Errorf("failed to configure NS records: %w", err)
+		}
+
+		// Step 2: Update domain nameservers
+		fmt.Println("→ Updating domain nameservers...")
+		if err := provider.UpdateNameservers(domain); err != nil {
+			return fmt.Errorf("failed to update nameservers: %w", err)
+		}
+
+		fmt.Println("✓ DNS provider configured successfully")
 		return nil
 	default:
 		return fmt.Errorf("unsupported DNS provider: %s", providerName)
