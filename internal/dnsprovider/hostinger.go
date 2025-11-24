@@ -238,7 +238,7 @@ func (h *HostingerProvider) UpdateNameservers(domain string) error {
 		return err
 	}
 
-	req, err := http.NewRequest("PUT", hostingerDomainsAPIURL+"/"+domain+"/nameservers", bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequest("PUT", hostingerDomainsAPIURL+"/portfolio/"+domain+"/nameservers", bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return err
 	}
@@ -259,6 +259,57 @@ func (h *HostingerProvider) UpdateNameservers(domain string) error {
 
 	fmt.Printf("✓ Updated nameservers to ns1.%s and ns2.%s\n", domain, domain)
 	return nil
+}
+
+// GetNameservers retrieves the current nameservers for a domain
+func (h *HostingerProvider) GetNameservers(domain string) ([]string, error) {
+	// Use the domain details endpoint which includes nameservers
+	req, err := http.NewRequest("GET", hostingerDomainsAPIURL+"/portfolio/"+domain, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+h.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Domain details response includes nameservers as a map
+	var response struct {
+		NameServers map[string]string `json:"name_servers"`
+	}
+
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse domain details response: %w", err)
+	}
+
+	// Convert the name_servers map to a sorted slice
+	var nameservers []string
+	if response.NameServers != nil {
+		// Extract and sort keys to ensure consistent order (ns1, ns2, ns3, etc.)
+		keys := make([]string, 0, len(response.NameServers))
+		for k := range response.NameServers {
+			keys = append(keys, k)
+		}
+		// Sort to get consistent order
+		for _, k := range []string{"ns1", "ns2", "ns3", "ns4", "ns5", "ns6", "ns7", "ns8"} {
+			if ns, exists := response.NameServers[k]; exists && ns != "" {
+				nameservers = append(nameservers, ns)
+			}
+		}
+	}
+
+	return nameservers, nil
 }
 
 // VerifyDomainOwnership verifies that the domain is managed by the DNS provider
@@ -305,16 +356,26 @@ func UpdateDNSRecords(providerName, apiToken, domain, serverIP string, simulate 
 		provider := NewHostingerProvider(apiToken)
 
 		if simulate {
-			// Simulation mode - fetch existing records and show what would be done
-			fmt.Println("→ [SIMULATION] Fetching existing DNS records...")
+			// Simulation mode - fetch existing data and show what would be done
+			fmt.Println("→ [SIMULATION] Fetching current DNS configuration...")
+
+			// Fetch existing DNS records
 			existingRecords, err := provider.getRecords(domain)
 			if err != nil {
 				fmt.Printf("  ⚠ Warning: Could not fetch existing records: %v\n", err)
-				fmt.Println("→ [SIMULATION] Would create NS records:")
-				fmt.Printf("  • ns1.%s A %s (TTL: 14400)\n", domain, serverIP)
-				fmt.Printf("  • ns2.%s A %s (TTL: 14400)\n", domain, serverIP)
-			} else {
-				// Check for existing ns1 and ns2 records
+			}
+
+			// Fetch current nameservers
+			currentNameservers, err := provider.GetNameservers(domain)
+			if err != nil {
+				fmt.Printf("  ⚠ Warning: Could not fetch current nameservers: %v\n", err)
+			}
+
+			// Display current state
+			fmt.Println("\n→ [SIMULATION] Current DNS configuration:")
+
+			// Show current NS records
+			if existingRecords != nil {
 				var ns1Record, ns2Record *HostingerRecord
 				for i := range existingRecords {
 					if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns1" {
@@ -325,23 +386,78 @@ func UpdateDNSRecords(providerName, apiToken, domain, serverIP string, simulate 
 					}
 				}
 
-				fmt.Println("→ [SIMULATION] NS record status:")
+				fmt.Println("  NS Records:")
 				if ns1Record != nil {
-					fmt.Printf("  ✓ ns1.%s A %s (TTL: %d) - already exists, ignoring\n", domain, ns1Record.Content, ns1Record.TTL)
+					fmt.Printf("    • ns1.%s A %s (TTL: %d)\n", domain, ns1Record.Content, ns1Record.TTL)
 				} else {
-					fmt.Printf("  • ns1.%s A %s (TTL: 14400) - would create\n", domain, serverIP)
+					fmt.Printf("    • ns1.%s - not configured\n", domain)
 				}
-
 				if ns2Record != nil {
-					fmt.Printf("  ✓ ns2.%s A %s (TTL: %d) - already exists, ignoring\n", domain, ns2Record.Content, ns2Record.TTL)
+					fmt.Printf("    • ns2.%s A %s (TTL: %d)\n", domain, ns2Record.Content, ns2Record.TTL)
 				} else {
-					fmt.Printf("  • ns2.%s A %s (TTL: 14400) - would create\n", domain, serverIP)
+					fmt.Printf("    • ns2.%s - not configured\n", domain)
 				}
 			}
 
-			fmt.Println("→ [SIMULATION] Nameserver configuration:")
-			fmt.Printf("  • Would ensure nameservers: ns1.%s, ns2.%s\n", domain, domain)
-			fmt.Println("✓ DNS provider configuration simulated successfully")
+			// Show current nameservers
+			if currentNameservers != nil && len(currentNameservers) > 0 {
+				fmt.Println("  Domain Nameservers:")
+				for _, ns := range currentNameservers {
+					fmt.Printf("    • %s\n", ns)
+				}
+			} else {
+				fmt.Println("  Domain Nameservers: none configured")
+			}
+
+			// Display what would be changed
+			fmt.Println("\n→ [SIMULATION] Planned changes:")
+
+			if existingRecords != nil {
+				var ns1Record, ns2Record *HostingerRecord
+				for i := range existingRecords {
+					if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns1" {
+						ns1Record = &existingRecords[i]
+					}
+					if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns2" {
+						ns2Record = &existingRecords[i]
+					}
+				}
+
+				hasChanges := false
+				if ns1Record == nil {
+					fmt.Printf("  • Would create: ns1.%s A %s (TTL: 14400)\n", domain, serverIP)
+					hasChanges = true
+				}
+				if ns2Record == nil {
+					fmt.Printf("  • Would create: ns2.%s A %s (TTL: 14400)\n", domain, serverIP)
+					hasChanges = true
+				}
+
+				// Check if nameservers need update
+				desiredNS := []string{fmt.Sprintf("ns1.%s", domain), fmt.Sprintf("ns2.%s", domain)}
+				needsNSUpdate := false
+				if len(currentNameservers) != len(desiredNS) {
+					needsNSUpdate = true
+				} else {
+					for i, ns := range currentNameservers {
+						if i >= len(desiredNS) || ns != desiredNS[i] {
+							needsNSUpdate = true
+							break
+						}
+					}
+				}
+
+				if needsNSUpdate {
+					fmt.Printf("  • Would update domain nameservers to: ns1.%s, ns2.%s\n", domain, domain)
+					hasChanges = true
+				}
+
+				if !hasChanges {
+					fmt.Println("  • No changes needed - DNS is already configured correctly")
+				}
+			}
+
+			fmt.Println("\n✓ DNS provider configuration simulated successfully")
 			return nil
 		}
 
