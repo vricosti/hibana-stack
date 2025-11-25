@@ -38,8 +38,10 @@ go.work.sum
 # Hibana-specific
 bin/
 /hibana
+/hibana-api
 hibana-config.yaml
 *.yaml.example
+ansible/api-build/
 
 # OS
 .DS_Store
