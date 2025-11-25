@@ -128,25 +128,6 @@
   register: www_result
 
 # ============================================================================
-# adm Service - REMOVED: Now handled by API container
-# The API container (api-domain) serves both the REST API and React frontend
-# at adm.{{ primary_domain }}
-# ============================================================================
-
-# Stop any existing adm nginx container (cleanup from previous installations)
-- name: Check if legacy adm docker-compose exists
-  stat:
-    path: "/srv/{{ primary_domain }}/adm/docker-compose.yml"
-  register: legacy_adm_compose
-
-- name: Stop legacy adm nginx service (cleanup)
-  docker_compose:
-    project_src: "/srv/{{ primary_domain }}/adm"
-    state: absent
-  ignore_errors: yes
-  when: legacy_adm_compose.stat.exists
-
-# ============================================================================
 # webmail Service (Roundcube)
 # ============================================================================
 
@@ -189,12 +170,12 @@
   register: webmail_result
 
 # ============================================================================
-# api Service (REST API Backend)
+# adm Service (Admin Interface - API + Frontend)
 # ============================================================================
 
-- name: Create api service directories
+- name: Create adm service directories
   file:
-    path: "/srv/{{ primary_domain }}/api/{{ item }}"
+    path: "/srv/{{ primary_domain }}/adm/{{ item }}"
     state: directory
     mode: '0755'
   loop:
@@ -220,7 +201,7 @@
     - name: Copy pre-built API binary
       copy:
         src: "{{ playbook_dir }}/api-build/hibana-api"
-        dest: "/srv/{{ primary_domain }}/api/app/hibana-api"
+        dest: "/srv/{{ primary_domain }}/adm/app/hibana-api"
         owner: root
         group: root
         mode: '0755'
@@ -228,14 +209,14 @@
     - name: Copy pre-built frontend
       synchronize:
         src: "{{ playbook_dir }}/api-build/web/"
-        dest: "/srv/{{ primary_domain }}/api/app/web/"
+        dest: "/srv/{{ primary_domain }}/adm/app/web/"
         delete: yes
       delegate_to: localhost
 
     - name: Copy pre-built Dockerfile
       copy:
         src: "{{ playbook_dir }}/api-build/Dockerfile"
-        dest: "/srv/{{ primary_domain }}/api/app/Dockerfile"
+        dest: "/srv/{{ primary_domain }}/adm/app/Dockerfile"
         owner: root
         group: root
         mode: '0644'
@@ -246,7 +227,7 @@
     - name: Create placeholder API files
       template:
         src: "api-{{ item }}.j2"
-        dest: "/srv/{{ primary_domain }}/api/app/{{ item }}"
+        dest: "/srv/{{ primary_domain }}/adm/app/{{ item }}"
         owner: root
         group: root
         mode: '0644'
@@ -255,25 +236,25 @@
         - 'go.mod'
         - 'Dockerfile'
 
-- name: Create api .env file
+- name: Create adm .env file
   template:
     src: api-env.j2
-    dest: "/srv/{{ primary_domain }}/api/.env"
+    dest: "/srv/{{ primary_domain }}/adm/.env"
     owner: root
     group: root
     mode: '0644'
 
-- name: Create api docker-compose
+- name: Create adm docker-compose
   template:
     src: api-docker-compose.yml.j2
-    dest: "/srv/{{ primary_domain }}/api/docker-compose.yml"
+    dest: "/srv/{{ primary_domain }}/adm/docker-compose.yml"
     owner: root
     group: root
     mode: '0644'
 
 - name: Check if JWT secret exists
   stat:
-    path: "/srv/{{ primary_domain }}/api/secrets/jwt_secret"
+    path: "/srv/{{ primary_domain }}/adm/secrets/jwt_secret"
   register: jwt_secret_file
 
 - name: Generate JWT secret if not exists
@@ -284,7 +265,7 @@
 - name: Save JWT secret
   copy:
     content: "{{ jwt_secret.stdout }}"
-    dest: "/srv/{{ primary_domain }}/api/secrets/jwt_secret"
+    dest: "/srv/{{ primary_domain }}/adm/secrets/jwt_secret"
     owner: root
     group: root
     mode: '0600'
@@ -298,7 +279,7 @@
 - name: Create database password secret
   copy:
     content: "{{ hibana_db_password_file.content | b64decode }}"
-    dest: "/srv/{{ primary_domain }}/api/secrets/db_password"
+    dest: "/srv/{{ primary_domain }}/adm/secrets/db_password"
     owner: root
     group: root
     mode: '0600'
@@ -311,23 +292,29 @@
 - name: Create pdns password secret
   copy:
     content: "{{ pdns_db_password_file.content | b64decode }}"
-    dest: "/srv/{{ primary_domain }}/api/secrets/pdns_password"
+    dest: "/srv/{{ primary_domain }}/adm/secrets/pdns_password"
     owner: root
     group: root
     mode: '0600'
 
-- name: Stop api service (cleanup)
+- name: Stop legacy api service (cleanup)
   docker_compose:
     project_src: "/srv/{{ primary_domain }}/api"
     state: absent
   ignore_errors: yes
 
-- name: Start api service
+- name: Stop adm service (cleanup)
   docker_compose:
-    project_src: "/srv/{{ primary_domain }}/api"
+    project_src: "/srv/{{ primary_domain }}/adm"
+    state: absent
+  ignore_errors: yes
+
+- name: Start adm service
+  docker_compose:
+    project_src: "/srv/{{ primary_domain }}/adm"
     build: yes
     state: present
-  register: api_result
+  register: adm_result
 
 # ============================================================================
 # Display Results
@@ -339,7 +326,7 @@
       - "Traefik: {{ 'deployed' if traefik_result.changed else 'already running' }}"
       - "WWW: {{ 'deployed' if www_result.changed else 'already running' }}"
       - "Webmail: {{ 'deployed' if webmail_result.changed else 'already running' }}"
-      - "API: {{ 'deployed' if api_result.changed else 'already running' }}"
+      - "Admin: {{ 'deployed' if adm_result.changed else 'already running' }}"
 
 - name: Display service URLs
   debug:
@@ -347,4 +334,3 @@
       - "Main Website: https://www.{{ primary_domain }}"
       - "Admin Interface: https://adm.{{ primary_domain }}"
       - "Webmail: https://webmail.{{ primary_domain }}"
-      - "API: https://api.{{ primary_domain }}"
