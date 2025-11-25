@@ -94,7 +94,7 @@ func (h *HostingerProvider) VerifyDomainManaged(domain string) error {
 	return fmt.Errorf("domain %s is not managed by this Hostinger account", domain)
 }
 
-// EnsureNSRecords ensures that ns1 and ns2 A records exist for the domain
+// EnsureNSRecords ensures that ns1 and ns2 A records exist for the domain with the correct IP
 func (h *HostingerProvider) EnsureNSRecords(domain, serverIP string) error {
 	// Get existing records
 	existingRecords, err := h.getRecords(domain)
@@ -102,23 +102,25 @@ func (h *HostingerProvider) EnsureNSRecords(domain, serverIP string) error {
 		return fmt.Errorf("failed to get existing records: %w", err)
 	}
 
-	// Check if ns1 and ns2 records exist
-	hasNS1 := false
-	hasNS2 := false
-
-	for _, record := range existingRecords {
-		if record.Type == "A" && record.Name == "ns1" {
-			hasNS1 = true
+	// Check if ns1 and ns2 records exist with correct IP
+	var ns1Record, ns2Record *HostingerRecord
+	for i := range existingRecords {
+		if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns1" {
+			ns1Record = &existingRecords[i]
 		}
-		if record.Type == "A" && record.Name == "ns2" {
-			hasNS2 = true
+		if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns2" {
+			ns2Record = &existingRecords[i]
 		}
 	}
 
-	// Create missing records
+	// Check if records exist and have correct IP
+	ns1OK := ns1Record != nil && ns1Record.Content == serverIP
+	ns2OK := ns2Record != nil && ns2Record.Content == serverIP
+
+	// Create or update records as needed
 	newRecords := []HostingerRecord{}
 
-	if !hasNS1 {
+	if !ns1OK {
 		newRecords = append(newRecords, HostingerRecord{
 			Type:    "A",
 			Name:    "ns1",
@@ -127,7 +129,7 @@ func (h *HostingerProvider) EnsureNSRecords(domain, serverIP string) error {
 		})
 	}
 
-	if !hasNS2 {
+	if !ns2OK {
 		newRecords = append(newRecords, HostingerRecord{
 			Type:    "A",
 			Name:    "ns2",
@@ -138,25 +140,44 @@ func (h *HostingerProvider) EnsureNSRecords(domain, serverIP string) error {
 
 	if len(newRecords) > 0 {
 		if err := h.updateRecords(domain, newRecords); err != nil {
-			return fmt.Errorf("failed to create NS records: %w", err)
+			return fmt.Errorf("failed to create/update NS records: %w", err)
 		}
 
-		if !hasNS1 {
-			fmt.Println("✓ Created DNS record: ns1 A " + serverIP)
+		if !ns1OK {
+			if ns1Record != nil {
+				fmt.Printf("✓ Updated DNS record: ns1 A %s (was %s)\n", serverIP, ns1Record.Content)
+			} else {
+				fmt.Println("✓ Created DNS record: ns1 A " + serverIP)
+			}
 		}
-		if !hasNS2 {
-			fmt.Println("✓ Created DNS record: ns2 A " + serverIP)
+		if !ns2OK {
+			if ns2Record != nil {
+				fmt.Printf("✓ Updated DNS record: ns2 A %s (was %s)\n", serverIP, ns2Record.Content)
+			} else {
+				fmt.Println("✓ Created DNS record: ns2 A " + serverIP)
+			}
 		}
 	}
 
-	if hasNS1 {
-		fmt.Println("✓ DNS record already exists: ns1 A")
+	if ns1OK {
+		fmt.Printf("✓ DNS record already correct: ns1 A %s\n", serverIP)
 	}
-	if hasNS2 {
-		fmt.Println("✓ DNS record already exists: ns2 A")
+	if ns2OK {
+		fmt.Printf("✓ DNS record already correct: ns2 A %s\n", serverIP)
 	}
 
 	return nil
+}
+
+// APIZoneRecord represents the DNS zone record format returned by the Hostinger API
+type APIZoneRecord struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	TTL     int    `json:"ttl"`
+	Records []struct {
+		Content    string `json:"content"`
+		IsDisabled bool   `json:"is_disabled"`
+	} `json:"records"`
 }
 
 // getRecords retrieves all DNS records for a domain
@@ -185,20 +206,78 @@ func (h *HostingerProvider) getRecords(domain string) ([]HostingerRecord, error)
 		return nil, err
 	}
 
-	var records []HostingerRecord
-	if err := json.Unmarshal(body, &records); err != nil {
+	// Parse the API response format
+	var apiRecords []APIZoneRecord
+	if err := json.Unmarshal(body, &apiRecords); err != nil {
 		return nil, fmt.Errorf("failed to parse records response: %w", err)
+	}
+
+	// Convert to flat HostingerRecord format for internal use
+	var records []HostingerRecord
+	for _, apiRec := range apiRecords {
+		for _, content := range apiRec.Records {
+			records = append(records, HostingerRecord{
+				Name:    apiRec.Name,
+				Type:    apiRec.Type,
+				TTL:     apiRec.TTL,
+				Content: content.Content,
+			})
+		}
 	}
 
 	return records, nil
 }
 
+// GetRecordsPublic retrieves all DNS records for a domain (public method)
+func (h *HostingerProvider) GetRecordsPublic(domain string) ([]HostingerRecord, error) {
+	return h.getRecords(domain)
+}
+
+// ZoneRecord represents the API request format for a DNS zone record
+type ZoneRecord struct {
+	Name    string         `json:"name"`
+	Type    string         `json:"type"`
+	TTL     int            `json:"ttl"`
+	Records []RecordContent `json:"records"`
+}
+
+// RecordContent represents the content of a DNS record
+type RecordContent struct {
+	Content string `json:"content"`
+}
+
+// UpdateRequest represents the Hostinger API request format for updating DNS records
+type UpdateRequest struct {
+	Overwrite bool         `json:"overwrite"`
+	Zone      []ZoneRecord `json:"zone"`
+}
+
 // updateRecords updates DNS records for the domain (adds new records)
 func (h *HostingerProvider) updateRecords(domain string, records []HostingerRecord) error {
-	payload, err := json.Marshal(records)
+	// Convert HostingerRecord to the API's expected format
+	zoneRecords := make([]ZoneRecord, 0, len(records))
+	for _, r := range records {
+		zoneRecords = append(zoneRecords, ZoneRecord{
+			Name: r.Name,
+			Type: r.Type,
+			TTL:  r.TTL,
+			Records: []RecordContent{
+				{Content: r.Content},
+			},
+		})
+	}
+
+	updateReq := UpdateRequest{
+		Overwrite: false, // Append/update, don't replace all records
+		Zone:      zoneRecords,
+	}
+
+	payload, err := json.Marshal(updateReq)
 	if err != nil {
 		return err
 	}
+
+	fmt.Printf("  DEBUG: Sending to API: %s\n", string(payload))
 
 	req, err := http.NewRequest("PUT", hostingerDNSAPIURL+"/zones/"+domain, bytes.NewBuffer(payload))
 	if err != nil {
@@ -223,14 +302,32 @@ func (h *HostingerProvider) updateRecords(domain string, records []HostingerReco
 }
 
 // UpdateNameservers updates the domain's nameservers to use ns1 and ns2
+// It first checks if they are already correctly configured
 func (h *HostingerProvider) UpdateNameservers(domain string) error {
-	nameservers := []string{
-		fmt.Sprintf("ns1.%s", domain),
-		fmt.Sprintf("ns2.%s", domain),
+	desiredNS1 := fmt.Sprintf("ns1.%s", domain)
+	desiredNS2 := fmt.Sprintf("ns2.%s", domain)
+
+	// First, check current nameservers
+	currentNameservers, err := h.GetNameservers(domain)
+	if err != nil {
+		fmt.Printf("  ⚠ Warning: Could not fetch current nameservers: %v\n", err)
+		// Continue anyway to try the update
+	} else {
+		// Check if nameservers are already correctly configured
+		if len(currentNameservers) >= 2 &&
+			currentNameservers[0] == desiredNS1 &&
+			currentNameservers[1] == desiredNS2 {
+			fmt.Printf("✓ Nameservers already configured correctly: %s, %s\n", desiredNS1, desiredNS2)
+			return nil
+		}
+		fmt.Printf("  Current nameservers: %v\n", currentNameservers)
+		fmt.Printf("  Desired nameservers: %s, %s\n", desiredNS1, desiredNS2)
 	}
 
-	payload := map[string][]string{
-		"nameservers": nameservers,
+	// Use correct payload format with ns1 and ns2 as separate fields
+	payload := map[string]string{
+		"ns1": desiredNS1,
+		"ns2": desiredNS2,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -257,7 +354,7 @@ func (h *HostingerProvider) UpdateNameservers(domain string) error {
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	fmt.Printf("✓ Updated nameservers to ns1.%s and ns2.%s\n", domain, domain)
+	fmt.Printf("✓ Updated nameservers to %s and %s\n", desiredNS1, desiredNS2)
 	return nil
 }
 
@@ -462,6 +559,45 @@ func UpdateDNSRecords(providerName, apiToken, domain, serverIP string, simulate 
 		}
 
 		// Real mode - make actual API calls
+		// First, display current configuration
+		fmt.Println("→ Fetching current DNS configuration...")
+
+		existingRecords, err := provider.getRecords(domain)
+		if err != nil {
+			fmt.Printf("  ⚠ Warning: Could not fetch existing records: %v\n", err)
+		} else {
+			fmt.Println("\n  Current DNS Records:")
+			if len(existingRecords) == 0 {
+				fmt.Println("    (no records found)")
+			} else {
+				for _, r := range existingRecords {
+					name := r.Name
+					if name == "" || name == "@" {
+						name = domain
+					} else {
+						name = name + "." + domain
+					}
+					fmt.Printf("    %-35s %-6s %5d  %s\n", name, r.Type, r.TTL, r.Content)
+				}
+			}
+		}
+
+		currentNameservers, err := provider.GetNameservers(domain)
+		if err != nil {
+			fmt.Printf("  ⚠ Warning: Could not fetch current nameservers: %v\n", err)
+		} else {
+			fmt.Println("\n  Current Nameservers:")
+			if len(currentNameservers) == 0 {
+				fmt.Println("    (no nameservers configured)")
+			} else {
+				for i, ns := range currentNameservers {
+					fmt.Printf("    %d. %s\n", i+1, ns)
+				}
+			}
+		}
+
+		fmt.Println()
+
 		// Step 1: Create ns1 and ns2 A records
 		fmt.Println("→ Configuring NS records...")
 		if err := provider.EnsureNSRecords(domain, serverIP); err != nil {
