@@ -51,7 +51,8 @@
       "Bash(sudo -S useradd:*)",
       "Bash(sudo -S chown:*)",
       "Bash(cat:*)",
-      "Bash(getent group:*)"
+      "Bash(getent group:*)",
+      "Bash(sudo -S mkdir:*)"
     ],
     "deny": [],
     "ask": []
