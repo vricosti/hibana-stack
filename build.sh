@@ -25,12 +25,60 @@ check_go() {
     echo -e "${GREEN}✓${NC} Found Go: $GO_VERSION"
 }
 
-# Build the hibana binary
+# Build the hibana CLI binary
+build_cli() {
+    echo "Building hibana CLI..."
+    go build -buildvcs=false -o bin/hibana ./cmd/hibana
+    echo -e "${GREEN}✓${NC} CLI build successful: bin/hibana"
+}
+
+# Build API binary and frontend for deployment
+build_api() {
+    echo "Building API for deployment..."
+
+    # Create output directory
+    mkdir -p ansible/api-build/web
+
+    # Build the API binary
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -ldflags="-s -w" -o ansible/api-build/hibana-api ./cmd/api
+
+    # Check if frontend is built
+    if [ ! -d "web/admin/dist" ]; then
+        echo -e "${YELLOW}Warning: Frontend not built. Run 'cd web/admin && npm install && npm run build' first${NC}"
+        echo -e "${YELLOW}Skipping frontend copy${NC}"
+    else
+        cp -r web/admin/dist/* ansible/api-build/web/
+    fi
+
+    # Create Dockerfile for pre-built binary
+    cat > ansible/api-build/Dockerfile << 'EOF'
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /app
+
+# Copy pre-built binary
+COPY hibana-api ./hibana-api
+
+# Copy frontend files
+COPY web/ ./web/
+
+EXPOSE 3000
+
+CMD ["./hibana-api", "--port", "3000", "--static", "./web"]
+EOF
+
+    echo -e "${GREEN}✓${NC} API build successful: ansible/api-build/"
+}
+
+# Build everything (CLI + API)
 build() {
     echo "Building hibana..."
     check_go
-    go build -buildvcs=false -o bin/hibana ./cmd/hibana
-    echo -e "${GREEN}✓${NC} Build successful: bin/hibana"
+    build_cli
+    build_api
+    echo -e "${GREEN}✓${NC} Build complete"
 }
 
 # Install hibana to /usr/local/bin
@@ -45,6 +93,7 @@ install() {
 clean() {
     echo "Cleaning..."
     rm -rf bin/
+    rm -rf ansible/api-build/
     if command -v go &> /dev/null; then
         go clean
     fi
