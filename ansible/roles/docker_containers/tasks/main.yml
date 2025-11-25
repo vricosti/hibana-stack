@@ -134,11 +134,17 @@
 # ============================================================================
 
 # Stop any existing adm nginx container (cleanup from previous installations)
+- name: Check if legacy adm docker-compose exists
+  stat:
+    path: "/srv/{{ primary_domain }}/adm/docker-compose.yml"
+  register: legacy_adm_compose
+
 - name: Stop legacy adm nginx service (cleanup)
   docker_compose:
     project_src: "/srv/{{ primary_domain }}/adm"
     state: absent
   ignore_errors: yes
+  when: legacy_adm_compose.stat.exists
 
 # ============================================================================
 # webmail Service (Roundcube)
@@ -332,7 +338,6 @@
     msg:
       - "Traefik: {{ 'deployed' if traefik_result.changed else 'already running' }}"
       - "WWW: {{ 'deployed' if www_result.changed else 'already running' }}"
-      - "Admin: {{ 'deployed' if adm_result.changed else 'already running' }}"
       - "Webmail: {{ 'deployed' if webmail_result.changed else 'already running' }}"
       - "API: {{ 'deployed' if api_result.changed else 'already running' }}"
 
