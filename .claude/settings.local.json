@@ -52,7 +52,8 @@
       "Bash(sudo -S chown:*)",
       "Bash(cat:*)",
       "Bash(getent group:*)",
-      "Bash(sudo -S mkdir:*)"
+      "Bash(sudo -S mkdir:*)",
+      "Bash(go build:*)"
     ],
     "deny": [],
     "ask": []

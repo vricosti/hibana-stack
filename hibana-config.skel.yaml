@@ -51,6 +51,16 @@ domain_user:
   # ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBtpvjKPQGY8mMxJZT... user@example.com"
   # ssh_public_key: ""
 
+# Optional: Domain redirects
+# Redirect domains to another URL. DNS for source domains must point to this server.
+# domain_redirects:
+#   - from: toto.fr                    # toto.fr -> https://example.com (primary domain)
+#   - from: toto.eu
+#     to: https://titi.com             # toto.eu -> https://titi.com
+#   - from: old-site.com
+#     to: https://new-site.com
+#     permanent: true                  # 301 permanent redirect (default: 302 temporary)
+
 # Optional: System users with sudo access (for administrators)
 # system_users:
 #   - username: admin

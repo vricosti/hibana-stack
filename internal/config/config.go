@@ -10,15 +10,16 @@ import (
 
 // Config represents the Hibana Stack configuration
 type Config struct {
-	PrimaryDomain string              `yaml:"primary_domain"`
-	ServerIP      string              `yaml:"server_ip"`
-	DNSProvider   *DNSProviderConfig  `yaml:"dns_provider,omitempty"`
-	SystemUsers   []SystemUser        `yaml:"system_users,omitempty"`
-	DomainUser    *DomainUserConfig   `yaml:"domain_user,omitempty"`
-	Subdomains    []Subdomain         `yaml:"subdomains"`
-	WebAdmin      *WebAdminConfig     `yaml:"webadmin,omitempty"`
-	EmailAccounts []EmailAccount      `yaml:"email_accounts"`
-	TestEmail     string              `yaml:"test_email,omitempty"`
+	PrimaryDomain    string              `yaml:"primary_domain"`
+	ServerIP         string              `yaml:"server_ip"`
+	DNSProvider      *DNSProviderConfig  `yaml:"dns_provider,omitempty"`
+	SystemUsers      []SystemUser        `yaml:"system_users,omitempty"`
+	DomainUser       *DomainUserConfig   `yaml:"domain_user,omitempty"`
+	Subdomains       []Subdomain         `yaml:"subdomains"`
+	WebAdmin         *WebAdminConfig     `yaml:"webadmin,omitempty"`
+	EmailAccounts    []EmailAccount      `yaml:"email_accounts"`
+	TestEmail        string              `yaml:"test_email,omitempty"`
+	DomainRedirects  []DomainRedirect    `yaml:"domain_redirects,omitempty"`
 }
 
 // WebAdminConfig represents web administration interface credentials
@@ -60,6 +61,13 @@ type DomainUserConfig struct {
 	Password     string `yaml:"password,omitempty"`        // Password for SSH login
 	SSHKeyMode   string `yaml:"ssh_key_mode"`              // "manual" or "auto"
 	SSHPublicKey string `yaml:"ssh_public_key,omitempty"`  // SSH public key (manual mode or auto with provided key)
+}
+
+// DomainRedirect represents a domain redirect configuration
+type DomainRedirect struct {
+	From       string `yaml:"from"`                        // Source domain (e.g., example.fr)
+	To         string `yaml:"to,omitempty"`                // Target URL (default: primary domain)
+	Permanent  bool   `yaml:"permanent,omitempty"`         // Use 301 (permanent) instead of 302 (temporary)
 }
 
 // LoadConfig loads configuration from a YAML file
