@@ -103,7 +103,6 @@ hibana-stack/
 - Focus on what changed and why, not how it was created
 
 **Documentation Guidelines**
-- Do not create multiple .md files unnecessarily
-- When adding documentation, prefer updating existing files, especially README.md
-- Keep documentation consolidated and maintainable
-- Only create new documentation files when absolutely necessary for organization
+- NEVER create new .md files - only README.md should exist for documentation
+- Keep README.md concise with only essential information
+- Do not duplicate information across files
