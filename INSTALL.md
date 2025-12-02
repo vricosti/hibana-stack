@@ -63,7 +63,6 @@ email_accounts:
   - username: admin
     password: CHANGE_THIS_PASSWORD
     full_name: Administrator
-test_email: your-email@example.com
 ```
 
 **Note**: The `system_users` section is optional. See `config-example.yaml` for an example of how to add system users.
@@ -91,7 +90,6 @@ nano hibana-config.yaml
 - `email_accounts`: List of email accounts to create
   - `username`: Email username (will become username@primarydomain.com)
   - `password`: Strong password for the email account
-- `test_email`: External email to test mail delivery
 
 **Example configuration:**
 
@@ -120,7 +118,6 @@ email_accounts:
   - username: contact
     password: AnotherSecureP@ss!
     full_name: Contact
-test_email: your-personal-email@gmail.com
 ```
 
 ### 5. Run Installation

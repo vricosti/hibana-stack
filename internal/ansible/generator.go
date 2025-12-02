@@ -87,10 +87,6 @@ email_accounts:
     full_name: "{{ .FullName }}"
 {{- end }}
 
-{{- if .TestEmail }}
-test_email: {{ .TestEmail }}
-{{- end }}
-
 {{- if .WebAdmin }}
 webadmin:
   username: "{{ .WebAdmin.Username }}"

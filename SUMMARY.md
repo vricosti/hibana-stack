@@ -186,7 +186,6 @@ email_accounts:
   - username: admin
     password: SECURE_PASSWORD
     full_name: Administrator
-test_email: your-email@example.com
 ```
 
 ## Installation Flow

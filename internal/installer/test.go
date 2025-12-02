@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// TestEmail tests email sending and receiving functionality
-func (i *Installer) TestEmail() error {
-	if i.config.TestEmail == "" {
-		fmt.Println("⚠️  No test email configured, skipping email test")
+// TestEmailTo tests email sending to a specified address
+func (i *Installer) TestEmailTo(testEmail string) error {
+	if testEmail == "" {
+		fmt.Println("⚠️  No test email address provided, skipping email test")
 		return nil
 	}
 
@@ -23,10 +23,10 @@ func (i *Installer) TestEmail() error {
 	fromAccount := i.config.EmailAccounts[0]
 	fromEmail := fmt.Sprintf("%s@%s", fromAccount.Username, domain)
 
-	fmt.Printf("Testing email from %s to %s...\n", fromEmail, i.config.TestEmail)
+	fmt.Printf("Testing email from %s to %s...\n", fromEmail, testEmail)
 
 	// Test 1: Send email via SMTP
-	if err := i.sendTestEmail(fromEmail, fromAccount.Password); err != nil {
+	if err := i.sendTestEmailTo(fromEmail, fromAccount.Password, testEmail); err != nil {
 		return fmt.Errorf("failed to send test email: %w", err)
 	}
 
@@ -40,13 +40,10 @@ func (i *Installer) TestEmail() error {
 	return nil
 }
 
-// sendTestEmail sends a test email via SMTP
-func (i *Installer) sendTestEmail(from, password string) error {
+// sendTestEmailTo sends a test email via SMTP to a specified address
+func (i *Installer) sendTestEmailTo(from, password, to string) error {
 	domain := i.config.PrimaryDomain
 	smtpPort := "587"
-
-	// Email content
-	to := i.config.TestEmail
 	subject := "Hibana Stack - Test Email"
 	body := fmt.Sprintf(`This is a test email from your Hibana Stack installation.
 
