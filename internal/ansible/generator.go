@@ -96,6 +96,17 @@ webadmin:
   username: "{{ .WebAdmin.Username }}"
   password: "{{ .WebAdmin.Password }}"
 {{- end }}
+
+{{- if .DomainRedirects }}
+domain_redirects:
+{{- range .DomainRedirects }}
+  - from: {{ .From }}
+    {{- if .To }}
+    to: "{{ .To }}"
+    {{- end }}
+    permanent: {{ .Permanent }}
+{{- end }}
+{{- end }}
 `
 
 	t, err := template.New("groupvars").Parse(tmpl)

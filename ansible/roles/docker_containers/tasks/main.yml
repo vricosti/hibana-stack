@@ -39,6 +39,14 @@
     group: root
     mode: '0644'
 
+- name: Create Traefik domain redirects configuration
+  template:
+    src: traefik/redirects.yml.j2
+    dest: /srv/traefik/dynamic/redirects.yml
+    owner: root
+    group: root
+    mode: '0644'
+
 - name: Create Traefik docker-compose
   template:
     src: traefik/docker-compose.yml.j2
