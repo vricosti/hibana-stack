@@ -13,12 +13,9 @@ Configure your Ubuntu server with DNS, mail, and multi-domain support in one com
 ## Quick Start
 
 ```bash
-# Clone and prepare
 git clone https://github.com/vricosti/hibana-stack.git
 cd hibana-stack
-./prepare-install.sh
-
-# Generate config and install
+sudo ./setup.sh
 sudo ./bin/hibana init
 nano hibana-config.yaml
 sudo ./bin/hibana init
