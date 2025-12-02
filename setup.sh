@@ -10,9 +10,16 @@ fi
 
 # Check/install Go
 if ! command -v go &> /dev/null; then
-    echo "Go not found, installing..."
     if [ -f /etc/debian_version ]; then
-        apt update && apt install -y golang-go
+        echo "Debian/Ubuntu detected. Go is not installed."
+        read -p "Run 'apt update && apt install -y golang-go'? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            apt update && apt install -y golang-go
+        else
+            echo "Aborted."
+            exit 1
+        fi
     else
         echo "Please install Go manually: https://go.dev/dl/"
         exit 1
