@@ -42,7 +42,6 @@ email_accounts:
   - username: admin
     password: SECURE_PASSWORD
     full_name: Administrator
-test_email: test@example.com
 ```
 
 ## Services

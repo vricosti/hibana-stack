@@ -18,7 +18,6 @@ type Config struct {
 	Subdomains       []Subdomain         `yaml:"subdomains"`
 	WebAdmin         *WebAdminConfig     `yaml:"webadmin,omitempty"`
 	EmailAccounts    []EmailAccount      `yaml:"email_accounts"`
-	TestEmail        string              `yaml:"test_email,omitempty"`
 	DomainRedirects  []DomainRedirect    `yaml:"domain_redirects,omitempty"`
 }
 
@@ -136,7 +135,6 @@ func GenerateSkeleton() *Config {
 				FullName: "Administrator",
 			},
 		},
-		TestEmail: "your-email@example.com",
 	}
 }
 
