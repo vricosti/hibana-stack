@@ -131,6 +131,10 @@
       VALUES ({{ domain_id }}, '{{ primary_domain }}', 'A', '{{ server_ip }}', 300, NULL)
   become_user: postgres
 
+- name: Build list of enabled subdomains
+  set_fact:
+    enabled_subdomains: "{{ subdomains | default([]) | map(attribute='name') | list }}"
+
 - name: Insert A records for subdomains
   postgresql_query:
     db: powerdns
@@ -140,11 +144,7 @@
     query: >
       INSERT INTO records (domain_id, name, type, content, ttl, prio)
       VALUES ({{ domain_id }}, '{{ item }}.{{ primary_domain }}', 'A', '{{ server_ip }}', 300, NULL)
-  loop:
-    - mail
-    - webmail
-    - adm
-    - www
+  loop: "{{ enabled_subdomains }}"
   become_user: postgres
 
 - name: Insert CNAME for www
@@ -156,6 +156,7 @@
     query: >
       INSERT INTO records (domain_id, name, type, content, ttl, prio)
       VALUES ({{ domain_id }}, 'www.{{ primary_domain }}', 'CNAME', '{{ primary_domain }}.', 300, NULL)
+  when: "'www' in enabled_subdomains"
   become_user: postgres
 
 - name: Insert MX record
