@@ -616,3 +616,172 @@ func UpdateDNSRecords(providerName, apiToken, domain, serverIP string, simulate 
 		return fmt.Errorf("unsupported DNS provider: %s", providerName)
 	}
 }
+
+// ============================================================================
+// VPS and PTR Record Management
+// ============================================================================
+
+const hostingerVPSAPIURL = "https://developers.hostinger.com/api/vps/v1"
+
+// VirtualMachine represents a VPS instance
+type VirtualMachine struct {
+	ID          int    `json:"id"`
+	Hostname    string `json:"hostname"`
+	State       string `json:"state"`
+	IPAddresses []IPAddress `json:"ip_addresses"`
+}
+
+// IPAddress represents an IP address attached to a VPS
+type IPAddress struct {
+	ID      int    `json:"id"`
+	Address string `json:"address"`
+	Type    string `json:"type"` // "ipv4" or "ipv6"
+	PTR     string `json:"ptr,omitempty"`
+}
+
+// GetVirtualMachines retrieves all VPS instances
+func (h *HostingerProvider) GetVirtualMachines() ([]VirtualMachine, error) {
+	req, err := http.NewRequest("GET", hostingerVPSAPIURL+"/virtual-machines", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+h.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var vms []VirtualMachine
+	if err := json.Unmarshal(body, &vms); err != nil {
+		return nil, fmt.Errorf("failed to parse VPS list: %w", err)
+	}
+
+	return vms, nil
+}
+
+// FindVMByIP finds a virtual machine by its IP address
+func (h *HostingerProvider) FindVMByIP(serverIP string) (*VirtualMachine, *IPAddress, error) {
+	vms, err := h.GetVirtualMachines()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for i := range vms {
+		for j := range vms[i].IPAddresses {
+			if vms[i].IPAddresses[j].Address == serverIP {
+				return &vms[i], &vms[i].IPAddresses[j], nil
+			}
+		}
+	}
+
+	return nil, nil, fmt.Errorf("no VPS found with IP address %s", serverIP)
+}
+
+// CreatePTRRecord creates or updates a PTR record for a VPS IP address
+func (h *HostingerProvider) CreatePTRRecord(vmID int, ipAddressID int, domain string) error {
+	url := fmt.Sprintf("%s/virtual-machines/%d/ptr/%d", hostingerVPSAPIURL, vmID, ipAddressID)
+
+	payload := map[string]string{
+		"domain": domain,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+h.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// ConfigurePTRRecords configures PTR records for the mail server
+func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) error {
+	fmt.Println("→ Looking up VPS by IP address...")
+
+	vm, _, err := h.FindVMByIP(serverIP)
+	if err != nil {
+		return fmt.Errorf("failed to find VPS: %w", err)
+	}
+
+	fmt.Printf("✓ Found VPS: %s (ID: %d)\n", vm.Hostname, vm.ID)
+
+	// Configure PTR for all IP addresses
+	for _, ip := range vm.IPAddresses {
+		fmt.Printf("→ Configuring PTR for %s (%s)...\n", ip.Address, ip.Type)
+
+		if err := h.CreatePTRRecord(vm.ID, ip.ID, mailHostname); err != nil {
+			fmt.Printf("  ⚠ Warning: Failed to set PTR for %s: %v\n", ip.Address, err)
+			continue
+		}
+
+		fmt.Printf("✓ PTR record set: %s → %s\n", ip.Address, mailHostname)
+	}
+
+	return nil
+}
+
+// ConfigurePTR configures PTR records for the mail server using the DNS provider
+func ConfigurePTR(providerName, apiToken, serverIP, domain string) error {
+	if providerName == "" || apiToken == "" {
+		// DNS provider not configured, show manual instructions
+		fmt.Println("\n⚠️  PTR records must be configured manually:")
+		fmt.Printf("    → Set PTR for IPv4 to: mail.%s\n", domain)
+		fmt.Printf("    → Set PTR for IPv6 to: mail.%s\n", domain)
+		fmt.Println("    → This is required for email deliverability")
+		return nil
+	}
+
+	providerName = strings.ToLower(strings.TrimSpace(providerName))
+	mailHostname := fmt.Sprintf("mail.%s", domain)
+
+	fmt.Println("\n📧 Configuring PTR records for mail server...")
+
+	switch providerName {
+	case "hostinger":
+		provider := NewHostingerProvider(apiToken)
+		if err := provider.ConfigurePTRRecords(serverIP, mailHostname); err != nil {
+			fmt.Printf("⚠ Warning: PTR configuration failed: %v\n", err)
+			fmt.Println("\n⚠️  Please configure PTR records manually in Hostinger hPanel:")
+			fmt.Println("    → VPS Settings → IP address → Set PTR record")
+			fmt.Printf("    → IPv4: %s\n", mailHostname)
+			fmt.Printf("    → IPv6: %s\n", mailHostname)
+			return nil // Don't fail the installation
+		}
+		fmt.Println("✓ PTR records configured successfully")
+		return nil
+	default:
+		fmt.Printf("⚠ PTR configuration not supported for provider: %s\n", providerName)
+		fmt.Println("\n⚠️  Please configure PTR records manually:")
+		fmt.Printf("    → Set PTR for IPv4 to: %s\n", mailHostname)
+		fmt.Printf("    → Set PTR for IPv6 to: %s\n", mailHostname)
+		return nil
+	}
+}

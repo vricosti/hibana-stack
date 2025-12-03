@@ -159,6 +159,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  • ns2.%s  A  %s  (TTL: 14400)\n", cfg.PrimaryDomain, cfg.ServerIP)
 			fmt.Printf("  • Update nameservers to: ns1.%s, ns2.%s\n\n", cfg.PrimaryDomain, cfg.PrimaryDomain)
 		}
+
+		// Configure PTR records if mailserver role is enabled
+		if hasRole(cfg.Subdomains, "mailserver") {
+			if err := dnsprovider.ConfigurePTR(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.ServerIP, cfg.PrimaryDomain); err != nil {
+				fmt.Printf("\n⚠️  Warning: PTR configuration failed: %v\n", err)
+			}
+		}
+	} else if hasRole(cfg.Subdomains, "mailserver") {
+		// No DNS provider configured but mailserver is enabled - show manual PTR instructions
+		fmt.Println("\n⚠️  PTR records must be configured manually for email deliverability:")
+		fmt.Printf("    → Set PTR for IPv4 to: mail.%s\n", cfg.PrimaryDomain)
+		fmt.Printf("    → Set PTR for IPv6 to: mail.%s\n", cfg.PrimaryDomain)
+	}
+
+	// Build list of enabled roles
+	enabledRoles := make(map[string]bool)
+	for _, sub := range cfg.Subdomains {
+		enabledRoles[sub.Role] = true
 	}
 
 	// Final summary
@@ -167,10 +185,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println(string(make([]byte, 80)))
 	fmt.Println()
 	fmt.Printf("Your services are now available at:\n")
-	fmt.Printf("  • Web admin:  https://adm.%s\n", cfg.PrimaryDomain)
-	fmt.Printf("  • Webmail:    https://webmail.%s\n", cfg.PrimaryDomain)
-	fmt.Printf("  • Website:    https://www.%s\n", cfg.PrimaryDomain)
-	fmt.Printf("  • Mail:       mail.%s\n", cfg.PrimaryDomain)
+	if enabledRoles["webadmin"] {
+		fmt.Printf("  • Web admin:  https://adm.%s\n", cfg.PrimaryDomain)
+	}
+	if enabledRoles["webmail"] {
+		fmt.Printf("  • Webmail:    https://webmail.%s\n", cfg.PrimaryDomain)
+	}
+	if enabledRoles["website"] {
+		fmt.Printf("  • Website:    https://www.%s\n", cfg.PrimaryDomain)
+	}
+	if enabledRoles["mailserver"] {
+		fmt.Printf("  • Mail:       mail.%s\n", cfg.PrimaryDomain)
+	}
 	fmt.Println()
 
 	if cfg.DNSProvider == nil || cfg.DNSProvider.Name == "" {
@@ -239,4 +265,14 @@ func generateRandomPassword(length int) string {
 	}
 
 	return password
+}
+
+// hasRole checks if a specific role is enabled in the subdomains configuration
+func hasRole(subdomains []config.Subdomain, role string) bool {
+	for _, sub := range subdomains {
+		if sub.Role == role {
+			return true
+		}
+	}
+	return false
 }
