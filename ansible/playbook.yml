@@ -57,6 +57,16 @@
           {% endif %}{% if 'mailserver' in enabled_roles %}  • Mail:       mail.{{ primary_domain }}
           {% endif %}
 
+    - name: Build PTR reminder if mailserver is enabled
+      set_fact:
+        ptr_reminder: |
+          {% if 'mailserver' in enabled_roles %}
+          ⚠️  For email deliverability, ensure PTR records are configured:
+              → IPv4 PTR: mail.{{ primary_domain }}
+              → IPv6 PTR: mail.{{ primary_domain }}
+              (Configure in your VPS provider's control panel)
+          {% endif %}
+
     - name: Display installation summary
       debug:
         msg: |
@@ -65,3 +75,4 @@
           Your services are now available at:
           {{ summary_urls }}
           Don't forget to update your domain's nameservers to point to this server!
+          {{ ptr_reminder }}
