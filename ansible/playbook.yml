@@ -44,15 +44,24 @@
       tags: [docker, containers, web]
 
   post_tasks:
+    - name: Build enabled roles list
+      set_fact:
+        enabled_roles: "{{ subdomains | default([]) | map(attribute='role') | list }}"
+
+    - name: Build service URLs for summary
+      set_fact:
+        summary_urls: |
+          {% if 'webadmin' in enabled_roles %}  • Web admin:  https://adm.{{ primary_domain }}
+          {% endif %}{% if 'webmail' in enabled_roles %}  • Webmail:    https://webmail.{{ primary_domain }}
+          {% endif %}{% if 'website' in enabled_roles %}  • Website:    https://www.{{ primary_domain }}
+          {% endif %}{% if 'mailserver' in enabled_roles %}  • Mail:       mail.{{ primary_domain }}
+          {% endif %}
+
     - name: Display installation summary
       debug:
         msg: |
           ✅ Hibana Stack installation complete!
 
           Your services are now available at:
-            • Web admin:  https://adm.{{ primary_domain }}
-            • Webmail:    https://webmail.{{ primary_domain }}
-            • Website:    https://www.{{ primary_domain }}
-            • Mail:       mail.{{ primary_domain }}
-
+          {{ summary_urls }}
           Don't forget to update your domain's nameservers to point to this server!
