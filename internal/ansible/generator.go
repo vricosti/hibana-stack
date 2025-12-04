@@ -10,7 +10,7 @@ import (
 	"github.com/vricosti/hibana-stack/internal/config"
 )
 
-// CreateWorkspace créer un répertoire de travail temporaire
+// CreateWorkspace creates a temporary working directory
 func CreateWorkspace() (string, error) {
 	workspaceDir, err := os.MkdirTemp("", "hibana-ansible-*")
 	if err != nil {
@@ -19,7 +19,7 @@ func CreateWorkspace() (string, error) {
 	return workspaceDir, nil
 }
 
-// GenerateInventory génère inventory.ini depuis le template
+// GenerateInventory generates inventory.ini from template
 func GenerateInventory(cfg *config.Config, workspaceDir string) error {
 	inventoryContent := `[hibana_server]
 localhost ansible_connection=local
@@ -36,7 +36,7 @@ ansible_python_interpreter=/usr/bin/python3
 	return nil
 }
 
-// GenerateGroupVars génère group_vars/all.yml depuis le template
+// GenerateGroupVars generates group_vars/all.yml from template
 func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 	// Create group_vars directory
 	groupVarsDir := filepath.Join(workspaceDir, "group_vars")
@@ -44,11 +44,80 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 		return fmt.Errorf("failed to create group_vars directory: %w", err)
 	}
 
+	// Get primary domain for backwards compatibility in templates
+	primaryDomain := cfg.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
+
+	// Template data structure for backwards compatibility
+	type TemplateData struct {
+		ServerIP        string
+		DNSProvider     *config.DNSProviderConfig
+		Domains         []config.Domain
+		PrimaryDomain   string
+		SystemUsers     []config.SystemUser
+		DomainRedirects []config.DomainRedirect
+	}
+
+	data := TemplateData{
+		ServerIP:        cfg.ServerIP,
+		DNSProvider:     cfg.DNSProvider,
+		Domains:         cfg.Domains,
+		PrimaryDomain:   primaryDomain.Name,
+		SystemUsers:     cfg.SystemUsers,
+		DomainRedirects: cfg.DomainRedirects,
+	}
+
 	// Template for group_vars/all.yml
 	tmpl := `---
 # Generated from hibana-config.yaml
-primary_domain: {{ .PrimaryDomain }}
 server_ip: {{ .ServerIP }}
+
+{{- if .DNSProvider }}
+dns_provider:
+  type: {{ .DNSProvider.Type }}
+  {{- if .DNSProvider.Name }}
+  name: {{ .DNSProvider.Name }}
+  {{- end }}
+  {{- if .DNSProvider.APIToken }}
+  api_token: "{{ .DNSProvider.APIToken }}"
+  {{- end }}
+{{- end }}
+
+# Primary domain (for backwards compatibility)
+primary_domain: {{ .PrimaryDomain }}
+
+# All domains
+domains:
+{{- range .Domains }}
+  - name: {{ .Name }}
+    is_primary: {{ .IsPrimary }}
+    subdomains:
+    {{- range .Subdomains }}
+      - name: {{ .Name }}
+        role: {{ .Role }}
+    {{- end }}
+    {{- if .WebAdmin }}
+    webadmin:
+      username: "{{ .WebAdmin.Username }}"
+      password: "{{ .WebAdmin.Password }}"
+    {{- end }}
+    email_accounts:
+    {{- range .EmailAccounts }}
+      - username: {{ .Username }}
+        password: "{{ .Password }}"
+        full_name: "{{ .FullName }}"
+    {{- end }}
+    {{- if .DomainUser }}
+    domain_user:
+      password: "{{ .DomainUser.Password }}"
+      ssh_key_mode: "{{ .DomainUser.SSHKeyMode }}"
+      {{- if .DomainUser.SSHPublicKey }}
+      ssh_public_key: "{{ .DomainUser.SSHPublicKey }}"
+      {{- end }}
+    {{- end }}
+{{- end }}
 
 {{- if .SystemUsers }}
 system_users:
@@ -63,34 +132,6 @@ system_users:
     ssh_pub_key: ""
     {{- end }}
 {{- end }}
-{{- end }}
-
-{{- if .DomainUser }}
-domain_user:
-  password: "{{ .DomainUser.Password }}"
-  ssh_key_mode: "{{ .DomainUser.SSHKeyMode }}"
-  {{- if .DomainUser.SSHPublicKey }}
-  ssh_public_key: "{{ .DomainUser.SSHPublicKey }}"
-  {{- end }}
-{{- end }}
-
-subdomains:
-{{- range .Subdomains }}
-  - name: {{ .Name }}
-    role: {{ .Role }}
-{{- end }}
-
-email_accounts:
-{{- range .EmailAccounts }}
-  - username: {{ .Username }}
-    password: "{{ .Password }}"
-    full_name: "{{ .FullName }}"
-{{- end }}
-
-{{- if .WebAdmin }}
-webadmin:
-  username: "{{ .WebAdmin.Username }}"
-  password: "{{ .WebAdmin.Password }}"
 {{- end }}
 
 {{- if .DomainRedirects }}
@@ -111,7 +152,7 @@ domain_redirects:
 	}
 
 	var buf bytes.Buffer
-	if err := t.Execute(&buf, cfg); err != nil {
+	if err := t.Execute(&buf, data); err != nil {
 		return fmt.Errorf("failed to execute group_vars template: %w", err)
 	}
 
@@ -123,7 +164,7 @@ domain_redirects:
 	return nil
 }
 
-// CopyRoles copie tous les roles dans le workspace
+// CopyRoles copies all roles to the workspace
 func CopyRoles(workspaceDir string) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
@@ -142,7 +183,7 @@ func CopyRoles(workspaceDir string) error {
 	return nil
 }
 
-// CopyPlaybook copie le playbook principal
+// CopyPlaybook copies the main playbook
 func CopyPlaybook(workspaceDir string) error {
 	// Get current working directory
 	cwd, err := os.Getwd()
@@ -209,7 +250,7 @@ func copyDir(src string, dst string) error {
 	return nil
 }
 
-// CopyResetPlaybook copie le playbook de reset
+// CopyResetPlaybook copies the reset playbook
 func CopyResetPlaybook(workspaceDir string) error {
 	// Get current working directory
 	cwd, err := os.Getwd()

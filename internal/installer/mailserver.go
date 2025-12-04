@@ -16,7 +16,7 @@ import (
 func (i *Installer) SetupMailServer() error {
 	// Open firewall ports for mail services
 	if err := i.openMailPorts(); err != nil {
-		fmt.Printf("⚠️  Warning: failed to open mail ports in firewall: %v\n", err)
+		fmt.Printf("Warning: failed to open mail ports in firewall: %v\n", err)
 		fmt.Println("   You may need to open ports manually: 25, 587, 465 (SMTP), 993 (IMAPS), 995 (POP3S)")
 	}
 
@@ -35,7 +35,7 @@ func (i *Installer) SetupMailServer() error {
 		return fmt.Errorf("failed to configure Dovecot: %w", err)
 	}
 
-	// Create email accounts
+	// Create email accounts for all domains
 	if err := i.createEmailAccounts(); err != nil {
 		return fmt.Errorf("failed to create email accounts: %w", err)
 	}
@@ -50,12 +50,30 @@ func (i *Installer) SetupMailServer() error {
 
 // configurePostfix sets up Postfix configuration
 func (i *Installer) configurePostfix() error {
-	domain := i.config.PrimaryDomain
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
+
+	domain := primaryDomain.Name
 	hostname := fmt.Sprintf("mail.%s", domain)
 
 	// Set hostname
 	if err := exec.Command("hostnamectl", "set-hostname", hostname).Run(); err != nil {
 		return fmt.Errorf("failed to set hostname: %w", err)
+	}
+
+	// Build virtual domains list (all domains)
+	var virtualDomains []string
+	for _, d := range i.config.Domains {
+		virtualDomains = append(virtualDomains, d.Name)
+	}
+	virtualDomainsStr := ""
+	for i, d := range virtualDomains {
+		if i > 0 {
+			virtualDomainsStr += ", "
+		}
+		virtualDomainsStr += d
 	}
 
 	// Main Postfix configuration
@@ -129,7 +147,7 @@ non_smtpd_milters = local:/run/opendkim/opendkim.sock
 
 # Other settings
 home_mailbox = Maildir/
-`, domain, domain, hostname, domain, domain)
+`, domain, domain, hostname, domain, virtualDomainsStr)
 
 	if err := os.WriteFile("/etc/postfix/main.cf", []byte(postfixMain), 0644); err != nil {
 		return fmt.Errorf("failed to write main.cf: %w", err)
@@ -179,10 +197,12 @@ scache    unix  -       -       y       -       1       scache
 		return fmt.Errorf("failed to write master.cf: %w", err)
 	}
 
-	// Create mail directories
-	mailDir := "/var/mail/vhosts/" + domain
-	if err := os.MkdirAll(mailDir, 0770); err != nil {
-		return fmt.Errorf("failed to create mail directory: %w", err)
+	// Create mail directories for all domains
+	for _, d := range i.config.Domains {
+		mailDir := "/var/mail/vhosts/" + d.Name
+		if err := os.MkdirAll(mailDir, 0770); err != nil {
+			return fmt.Errorf("failed to create mail directory for %s: %w", d.Name, err)
+		}
 	}
 
 	// Set proper ownership
@@ -203,7 +223,12 @@ scache    unix  -       -       y       -       1       scache
 
 // configureDovecot sets up Dovecot configuration
 func (i *Installer) configureDovecot() error {
-	domain := i.config.PrimaryDomain
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
+
+	domain := primaryDomain.Name
 
 	// Use self-signed certificates for now (will be updated to Let's Encrypt later)
 	sslCert := fmt.Sprintf("/etc/ssl/certs/hibana-%s.crt", domain)
@@ -274,40 +299,42 @@ namespace inbox {
 	return nil
 }
 
-// createEmailAccounts creates email user accounts
+// createEmailAccounts creates email user accounts for all domains
 func (i *Installer) createEmailAccounts() error {
-	domain := i.config.PrimaryDomain
 	usersFile := "/etc/dovecot/users"
 	vmailboxFile := "/etc/postfix/vmailbox"
 
 	var usersContent string
 	var vmailboxContent string
 
-	for _, account := range i.config.EmailAccounts {
-		email := fmt.Sprintf("%s@%s", account.Username, domain)
+	// Create accounts for all domains
+	for _, domain := range i.config.Domains {
+		for _, account := range domain.EmailAccounts {
+			email := fmt.Sprintf("%s@%s", account.Username, domain.Name)
 
-		// Hash password for Dovecot (SHA512-CRYPT)
-		hashedPassword := hashPasswordSHA512(account.Password)
+			// Hash password for Dovecot (SHA512-CRYPT)
+			hashedPassword := hashPasswordSHA512(account.Password)
 
-		// Add to Dovecot users file
-		usersContent += fmt.Sprintf("%s:%s\n", email, hashedPassword)
+			// Add to Dovecot users file
+			usersContent += fmt.Sprintf("%s:%s\n", email, hashedPassword)
 
-		// Add to Postfix virtual mailbox
-		vmailboxContent += fmt.Sprintf("%s %s/%s/\n", email, domain, account.Username)
+			// Add to Postfix virtual mailbox
+			vmailboxContent += fmt.Sprintf("%s %s/%s/\n", email, domain.Name, account.Username)
 
-		// Create mailbox directory
-		mailboxDir := filepath.Join("/var/mail/vhosts", domain, account.Username)
-		if err := os.MkdirAll(mailboxDir, 0770); err != nil {
-			return fmt.Errorf("failed to create mailbox for %s: %w", email, err)
-		}
+			// Create mailbox directory
+			mailboxDir := filepath.Join("/var/mail/vhosts", domain.Name, account.Username)
+			if err := os.MkdirAll(mailboxDir, 0770); err != nil {
+				return fmt.Errorf("failed to create mailbox for %s: %w", email, err)
+			}
 
-		if err := exec.Command("chown", "-R", "vmail:vmail", mailboxDir).Run(); err != nil {
-			return fmt.Errorf("failed to set mailbox ownership for %s: %w", email, err)
-		}
+			if err := exec.Command("chown", "-R", "vmail:vmail", mailboxDir).Run(); err != nil {
+				return fmt.Errorf("failed to set mailbox ownership for %s: %w", email, err)
+			}
 
-		// Store in database
-		if err := i.storeEmailAccount(domain, account); err != nil {
-			return fmt.Errorf("failed to store email account %s: %w", email, err)
+			// Store in database
+			if err := i.storeEmailAccount(domain.Name, account); err != nil {
+				return fmt.Errorf("failed to store email account %s: %w", email, err)
+			}
 		}
 	}
 
@@ -339,14 +366,14 @@ func (i *Installer) createEmailAccounts() error {
 }
 
 // storeEmailAccount stores email account in database
-func (i *Installer) storeEmailAccount(domain string, account config.EmailAccount) error {
+func (i *Installer) storeEmailAccount(domainName string, account config.EmailAccount) error {
 	if i.db == nil {
 		return fmt.Errorf("database not connected")
 	}
 
 	// Get domain ID
 	var domainID int
-	err := i.db.QueryRow("SELECT id FROM domains WHERE name = $1", domain).Scan(&domainID)
+	err := i.db.QueryRow("SELECT id FROM domains WHERE name = $1", domainName).Scan(&domainID)
 	if err != nil {
 		return fmt.Errorf("domain not found: %w", err)
 	}
@@ -402,14 +429,19 @@ func (i *Installer) restartMailServices() error {
 
 // generateSelfSignedCerts generates self-signed SSL certificates for mail server
 func (i *Installer) generateSelfSignedCerts() error {
-	domain := i.config.PrimaryDomain
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
+
+	domain := primaryDomain.Name
 	certPath := fmt.Sprintf("/etc/ssl/certs/hibana-%s.crt", domain)
 	keyPath := fmt.Sprintf("/etc/ssl/private/hibana-%s.key", domain)
 
 	// Check if certificates already exist
 	if _, err := os.Stat(certPath); err == nil {
 		if _, err := os.Stat(keyPath); err == nil {
-			fmt.Println("  ✓ Self-signed certificates already exist")
+			fmt.Println("  Self-signed certificates already exist")
 			return nil
 		}
 	}
@@ -439,8 +471,8 @@ func (i *Installer) generateSelfSignedCerts() error {
 		return fmt.Errorf("failed to set key permissions: %w", err)
 	}
 
-	fmt.Println("  ✓ Self-signed certificates generated")
-	fmt.Println("  ⚠️  Note: These will be replaced by Let's Encrypt certificates after Traefik setup")
+	fmt.Println("  Self-signed certificates generated")
+	fmt.Println("  Note: These will be replaced by Let's Encrypt certificates after Traefik setup")
 	return nil
 }
 

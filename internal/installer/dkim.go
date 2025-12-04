@@ -9,14 +9,41 @@ import (
 	"strings"
 )
 
-// SetupDKIM configures OpenDKIM for the domain
+// SetupDKIM configures OpenDKIM for all domains
 func (i *Installer) SetupDKIM() error {
-	domain := i.config.PrimaryDomain
+	// Setup DKIM for each domain
+	for _, domain := range i.config.Domains {
+		if err := i.setupDKIMForDomain(domain.Name); err != nil {
+			return fmt.Errorf("failed to setup DKIM for %s: %w", domain.Name, err)
+		}
+	}
+
+	// Configure OpenDKIM with all domains
+	if err := i.configureOpenDKIMMultiDomain(); err != nil {
+		return fmt.Errorf("failed to configure OpenDKIM: %w", err)
+	}
+
+	// Set proper permissions
+	keysDir := "/etc/opendkim/keys"
+	if err := exec.Command("chown", "-R", "opendkim:opendkim", keysDir).Run(); err != nil {
+		return fmt.Errorf("failed to set OpenDKIM permissions: %w", err)
+	}
+
+	// Restart OpenDKIM
+	if err := i.restartOpenDKIM(); err != nil {
+		return fmt.Errorf("failed to restart OpenDKIM: %w", err)
+	}
+
+	return nil
+}
+
+// setupDKIMForDomain sets up DKIM keys for a specific domain
+func (i *Installer) setupDKIMForDomain(domainName string) error {
 	selector := "default"
 
 	// Create OpenDKIM directories
 	keysDir := "/etc/opendkim/keys"
-	domainDir := filepath.Join(keysDir, domain)
+	domainDir := filepath.Join(keysDir, domainName)
 
 	if err := os.MkdirAll(domainDir, 0750); err != nil {
 		return fmt.Errorf("failed to create OpenDKIM keys directory: %w", err)
@@ -27,7 +54,7 @@ func (i *Installer) SetupDKIM() error {
 	publicKeyPath := filepath.Join(domainDir, selector+".txt")
 
 	if _, err := os.Stat(privateKeyPath); os.IsNotExist(err) {
-		if err := i.generateDKIMKeys(domain, selector, domainDir); err != nil {
+		if err := i.generateDKIMKeys(domainName, selector, domainDir); err != nil {
 			return fmt.Errorf("failed to generate DKIM keys: %w", err)
 		}
 	}
@@ -41,23 +68,8 @@ func (i *Installer) SetupDKIM() error {
 	publicKey := extractDKIMPublicKey(string(publicKeyData))
 
 	// Store DKIM keys in database
-	if err := i.storeDKIMKeys(domain, selector, privateKeyPath, publicKey); err != nil {
+	if err := i.storeDKIMKeys(domainName, selector, privateKeyPath, publicKey); err != nil {
 		return fmt.Errorf("failed to store DKIM keys: %w", err)
-	}
-
-	// Configure OpenDKIM
-	if err := i.configureOpenDKIM(domain, selector); err != nil {
-		return fmt.Errorf("failed to configure OpenDKIM: %w", err)
-	}
-
-	// Set proper permissions
-	if err := exec.Command("chown", "-R", "opendkim:opendkim", keysDir).Run(); err != nil {
-		return fmt.Errorf("failed to set OpenDKIM permissions: %w", err)
-	}
-
-	// Restart OpenDKIM
-	if err := i.restartOpenDKIM(); err != nil {
-		return fmt.Errorf("failed to restart OpenDKIM: %w", err)
 	}
 
 	return nil
@@ -80,8 +92,10 @@ func (i *Installer) generateDKIMKeys(domain, selector, outputDir string) error {
 	return nil
 }
 
-// configureOpenDKIM creates OpenDKIM configuration files
-func (i *Installer) configureOpenDKIM(domain, selector string) error {
+// configureOpenDKIMMultiDomain creates OpenDKIM configuration files for all domains
+func (i *Installer) configureOpenDKIMMultiDomain() error {
+	selector := "default"
+
 	// Main configuration
 	opendkimConf := `# OpenDKIM Configuration
 Syslog                  yes
@@ -113,32 +127,37 @@ InternalHosts           /etc/opendkim/trusted.hosts
 		return fmt.Errorf("failed to write opendkim.conf: %w", err)
 	}
 
-	// Key table
+	// Key table - entries for all domains
 	keyTablePath := "/etc/opendkim/key.table"
-	keyTable := fmt.Sprintf("%s._domainkey.%s %s:%s:/etc/opendkim/keys/%s/%s.private\n",
-		selector, domain, domain, selector, domain, selector)
+	var keyTable string
+	for _, domain := range i.config.Domains {
+		keyTable += fmt.Sprintf("%s._domainkey.%s %s:%s:/etc/opendkim/keys/%s/%s.private\n",
+			selector, domain.Name, domain.Name, selector, domain.Name, selector)
+	}
 
-	if err := i.appendOrCreateFile(keyTablePath, keyTable); err != nil {
+	if err := os.WriteFile(keyTablePath, []byte(keyTable), 0644); err != nil {
 		return fmt.Errorf("failed to write key.table: %w", err)
 	}
 
-	// Signing table
+	// Signing table - entries for all domains
 	signingTablePath := "/etc/opendkim/signing.table"
-	signingTable := fmt.Sprintf("*@%s %s._domainkey.%s\n", domain, selector, domain)
+	var signingTable string
+	for _, domain := range i.config.Domains {
+		signingTable += fmt.Sprintf("*@%s %s._domainkey.%s\n", domain.Name, selector, domain.Name)
+	}
 
-	if err := i.appendOrCreateFile(signingTablePath, signingTable); err != nil {
+	if err := os.WriteFile(signingTablePath, []byte(signingTable), 0644); err != nil {
 		return fmt.Errorf("failed to write signing.table: %w", err)
 	}
 
-	// Trusted hosts
+	// Trusted hosts - entries for all domains
 	trustedHostsPath := "/etc/opendkim/trusted.hosts"
-	trustedHosts := fmt.Sprintf(`127.0.0.1
-localhost
-%s
-*.%s
-`, domain, domain)
+	trustedHosts := "127.0.0.1\nlocalhost\n"
+	for _, domain := range i.config.Domains {
+		trustedHosts += fmt.Sprintf("%s\n*.%s\n", domain.Name, domain.Name)
+	}
 
-	if err := i.appendOrCreateFile(trustedHostsPath, trustedHosts); err != nil {
+	if err := os.WriteFile(trustedHostsPath, []byte(trustedHosts), 0644); err != nil {
 		return fmt.Errorf("failed to write trusted.hosts: %w", err)
 	}
 
@@ -160,7 +179,7 @@ func (i *Installer) restartOpenDKIM() error {
 
 	// Add postfix user to opendkim group so it can access the socket
 	if err := exec.Command("usermod", "-a", "-G", "opendkim", "postfix").Run(); err != nil {
-		fmt.Println("  ⚠️  Warning: Could not add postfix to opendkim group")
+		fmt.Println("  Warning: Could not add postfix to opendkim group")
 	}
 
 	// Restart service
@@ -186,14 +205,14 @@ func (i *Installer) restartOpenDKIM() error {
 }
 
 // storeDKIMKeys stores DKIM keys in the Hibana database
-func (i *Installer) storeDKIMKeys(domain, selector, privateKeyPath, publicKey string) error {
+func (i *Installer) storeDKIMKeys(domainName, selector, privateKeyPath, publicKey string) error {
 	if i.db == nil {
 		return fmt.Errorf("database not connected")
 	}
 
 	// Get domain ID
 	var domainID int
-	err := i.db.QueryRow("SELECT id FROM domains WHERE name = $1", domain).Scan(&domainID)
+	err := i.db.QueryRow("SELECT id FROM domains WHERE name = $1", domainName).Scan(&domainID)
 	if err != nil {
 		return fmt.Errorf("domain not found: %w", err)
 	}

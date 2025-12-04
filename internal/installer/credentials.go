@@ -25,8 +25,13 @@ type EmailAccountCreds struct {
 
 // GetCredentialsSummary collects all credentials from the installation
 func (i *Installer) GetCredentialsSummary() (*CredentialsSummary, error) {
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return nil, fmt.Errorf("no primary domain configured")
+	}
+
 	summary := &CredentialsSummary{
-		Domain:            i.config.PrimaryDomain,
+		Domain:            primaryDomain.Name,
 		ServerIP:          i.config.ServerIP,
 		DatabasePasswords: make(map[string]string),
 		GeneratedAt:       time.Now(),
@@ -39,13 +44,15 @@ func (i *Installer) GetCredentialsSummary() (*CredentialsSummary, error) {
 		summary.DatabasePasswords[user] = password
 	}
 
-	// Collect email account credentials
-	for _, account := range i.config.EmailAccounts {
-		summary.EmailAccounts = append(summary.EmailAccounts, EmailAccountCreds{
-			Email:    fmt.Sprintf("%s@%s", account.Username, i.config.PrimaryDomain),
-			Password: account.Password,
-			FullName: account.FullName,
-		})
+	// Collect email account credentials from all domains
+	for _, domain := range i.config.Domains {
+		for _, account := range domain.EmailAccounts {
+			summary.EmailAccounts = append(summary.EmailAccounts, EmailAccountCreds{
+				Email:    fmt.Sprintf("%s@%s", account.Username, domain.Name),
+				Password: account.Password,
+				FullName: account.FullName,
+			})
+		}
 	}
 
 	return summary, nil
@@ -136,16 +143,16 @@ ACCESS INFORMATION
 --------------------------------------------------------------------------------
 
 Web Interfaces:
-  • Main Website:  https://www.` + summary.Domain + `
-  • Admin Panel:   https://adm.` + summary.Domain + ` (Phase 2)
-  • Webmail:       https://webmail.` + summary.Domain + `
+  - Main Website:  https://www.` + summary.Domain + `
+  - Admin Panel:   https://adm.` + summary.Domain + ` (Phase 2)
+  - Webmail:       https://webmail.` + summary.Domain + `
 
 Mail Server:
-  • IMAP:          mail.` + summary.Domain + `:993 (SSL/TLS)
-  • SMTP:          mail.` + summary.Domain + `:587 (STARTTLS)
+  - IMAP:          mail.` + summary.Domain + `:993 (SSL/TLS)
+  - SMTP:          mail.` + summary.Domain + `:587 (STARTTLS)
 
 DNS Server:
-  • Nameserver:    ns1.` + summary.Domain + ` (` + summary.ServerIP + `)
+  - Nameserver:    ns1.` + summary.Domain + ` (` + summary.ServerIP + `)
 
 --------------------------------------------------------------------------------
 PASSWORD FILES LOCATION
@@ -195,30 +202,30 @@ SECURITY RECOMMENDATIONS
 // DisplayCredentialsSummary prints credentials to console
 func (i *Installer) DisplayCredentialsSummary(summary *CredentialsSummary) {
 	fmt.Println("\n" + string(make([]byte, 80)))
-	fmt.Println("🔑 CREDENTIALS SUMMARY")
+	fmt.Println("CREDENTIALS SUMMARY")
 	fmt.Println(string(make([]byte, 80)))
 
-	fmt.Println("\n📊 Database Credentials:")
+	fmt.Println("\nDatabase Credentials:")
 	fmt.Printf("   Hibana DB:    User: hibana    Password: %s\n", maskPassword(summary.DatabasePasswords["hibana"]))
 	fmt.Printf("   PowerDNS DB:  User: pdns      Password: %s\n", maskPassword(summary.DatabasePasswords["pdns"]))
 	fmt.Printf("   PowerDNS API: API Key: %s\n", maskPassword(summary.DatabasePasswords["pdns-api"]))
 
-	fmt.Println("\n📧 Email Accounts:")
+	fmt.Println("\nEmail Accounts:")
 	for i, account := range summary.EmailAccounts {
 		fmt.Printf("   %d. %s\n", i+1, account.Email)
 		fmt.Printf("      Password: %s\n", maskPassword(account.Password))
 	}
 
-	fmt.Println("\n📁 Credentials saved to:")
+	fmt.Println("\nCredentials saved to:")
 	fmt.Println("   /etc/hibana/credentials-summary.txt")
 	fmt.Println("   /etc/hibana/passwords/ (individual files)")
 
-	fmt.Println("\n⚠️  IMPORTANT:")
-	fmt.Println("   • Keep these credentials secure")
-	fmt.Println("   • Store in a password manager")
-	fmt.Println("   • Delete credentials-summary.txt after noting them")
+	fmt.Println("\nIMPORTANT:")
+	fmt.Println("   - Keep these credentials secure")
+	fmt.Println("   - Store in a password manager")
+	fmt.Println("   - Delete credentials-summary.txt after noting them")
 
-	fmt.Println("\n💡 To view credentials later:")
+	fmt.Println("\nTo view credentials later:")
 	fmt.Println("   sudo cat /etc/hibana/credentials-summary.txt")
 	fmt.Println("   sudo cat /etc/hibana/passwords/<username>")
 

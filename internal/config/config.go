@@ -10,27 +10,34 @@ import (
 
 // Config represents the Hibana Stack configuration
 type Config struct {
-	PrimaryDomain    string              `yaml:"primary_domain"`
-	ServerIP         string              `yaml:"server_ip"`
-	DNSProvider      *DNSProviderConfig  `yaml:"dns_provider,omitempty"`
-	SystemUsers      []SystemUser        `yaml:"system_users,omitempty"`
-	DomainUser       *DomainUserConfig   `yaml:"domain_user,omitempty"`
-	Subdomains       []Subdomain         `yaml:"subdomains"`
-	WebAdmin         *WebAdminConfig     `yaml:"webadmin,omitempty"`
-	EmailAccounts    []EmailAccount      `yaml:"email_accounts"`
-	DomainRedirects  []DomainRedirect    `yaml:"domain_redirects,omitempty"`
+	ServerIP        string             `yaml:"server_ip"`
+	DNSProvider     *DNSProviderConfig `yaml:"dns_provider,omitempty"`
+	Domains         []Domain           `yaml:"domains"`
+	DomainRedirects []DomainRedirect   `yaml:"domain_redirects,omitempty"`
+	SystemUsers     []SystemUser       `yaml:"system_users,omitempty"`
+}
+
+// DNSProviderConfig represents DNS provider configuration
+type DNSProviderConfig struct {
+	Type     string `yaml:"type"`               // "local", "external", or "manual"
+	Name     string `yaml:"name,omitempty"`     // Provider name (required for local and external)
+	APIToken string `yaml:"api_token,omitempty"` // API token (required for local and external)
+}
+
+// Domain represents a domain configuration
+type Domain struct {
+	Name          string            `yaml:"name"`
+	IsPrimary     bool              `yaml:"is_primary"`
+	Subdomains    []Subdomain       `yaml:"subdomains"`
+	WebAdmin      *WebAdminConfig   `yaml:"webadmin,omitempty"`
+	EmailAccounts []EmailAccount    `yaml:"email_accounts"`
+	DomainUser    *DomainUserConfig `yaml:"domain_user,omitempty"`
 }
 
 // WebAdminConfig represents web administration interface credentials
 type WebAdminConfig struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
-}
-
-// DNSProviderConfig represents DNS provider configuration
-type DNSProviderConfig struct {
-	Name     string `yaml:"name"`
-	APIToken string `yaml:"api_token"`
 }
 
 // Subdomain represents a subdomain configuration with its role
@@ -57,16 +64,16 @@ type EmailAccount struct {
 
 // DomainUserConfig represents domain user SSH configuration
 type DomainUserConfig struct {
-	Password     string `yaml:"password,omitempty"`        // Password for SSH login
-	SSHKeyMode   string `yaml:"ssh_key_mode"`              // "manual" or "auto"
-	SSHPublicKey string `yaml:"ssh_public_key,omitempty"`  // SSH public key (manual mode or auto with provided key)
+	Password     string `yaml:"password,omitempty"`       // Password for SSH login
+	SSHKeyMode   string `yaml:"ssh_key_mode"`             // "manual" or "auto"
+	SSHPublicKey string `yaml:"ssh_public_key,omitempty"` // SSH public key (manual mode or auto with provided key)
 }
 
 // DomainRedirect represents a domain redirect configuration
 type DomainRedirect struct {
-	From       string `yaml:"from"`                        // Source domain (e.g., example.fr)
-	To         string `yaml:"to,omitempty"`                // Target URL (default: primary domain)
-	Permanent  bool   `yaml:"permanent,omitempty"`         // Use 301 (permanent) instead of 302 (temporary)
+	From      string `yaml:"from"`               // Source domain (e.g., example.fr)
+	To        string `yaml:"to,omitempty"`       // Target URL (default: primary domain)
+	Permanent bool   `yaml:"permanent,omitempty"` // Use 301 (permanent) instead of 302 (temporary)
 }
 
 // LoadConfig loads configuration from a YAML file
@@ -91,92 +98,222 @@ func LoadConfig(path string) (*Config, error) {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
-	if c.PrimaryDomain == "" {
-		return fmt.Errorf("primary_domain is required")
-	}
-
 	if c.ServerIP == "" {
 		return fmt.Errorf("server_ip is required")
 	}
 
-	if len(c.EmailAccounts) == 0 {
-		return fmt.Errorf("at least one email account is required")
+	if len(c.Domains) == 0 {
+		return fmt.Errorf("at least one domain is required")
 	}
 
-	for i, acc := range c.EmailAccounts {
-		if acc.Username == "" {
-			return fmt.Errorf("email_accounts[%d]: username is required", i)
+	// Check for exactly one primary domain
+	primaryCount := 0
+	for _, d := range c.Domains {
+		if d.IsPrimary {
+			primaryCount++
 		}
-		if acc.Password == "" {
-			return fmt.Errorf("email_accounts[%d]: password is required", i)
+	}
+	if primaryCount == 0 {
+		return fmt.Errorf("exactly one domain must have is_primary: true")
+	}
+	if primaryCount > 1 {
+		return fmt.Errorf("only one domain can have is_primary: true (found %d)", primaryCount)
+	}
+
+	// Validate DNS provider
+	if c.DNSProvider != nil {
+		if err := c.DNSProvider.Validate(); err != nil {
+			return fmt.Errorf("dns_provider: %w", err)
+		}
+	}
+
+	// Validate each domain
+	for i, d := range c.Domains {
+		if d.Name == "" {
+			return fmt.Errorf("domains[%d]: name is required", i)
+		}
+
+		if len(d.EmailAccounts) == 0 {
+			return fmt.Errorf("domains[%d] (%s): at least one email account is required", i, d.Name)
+		}
+
+		for j, acc := range d.EmailAccounts {
+			if acc.Username == "" {
+				return fmt.Errorf("domains[%d] (%s): email_accounts[%d]: username is required", i, d.Name, j)
+			}
+			if acc.Password == "" {
+				return fmt.Errorf("domains[%d] (%s): email_accounts[%d]: password is required", i, d.Name, j)
+			}
+		}
+
+		// Primary domain must have webadmin configured
+		if d.IsPrimary && d.WebAdmin == nil {
+			return fmt.Errorf("domains[%d] (%s): webadmin is required for primary domain", i, d.Name)
 		}
 	}
 
 	return nil
 }
 
+// Validate validates the DNS provider configuration
+func (d *DNSProviderConfig) Validate() error {
+	validTypes := map[string]bool{"local": true, "external": true, "manual": true}
+	if !validTypes[d.Type] {
+		return fmt.Errorf("type must be 'local', 'external', or 'manual' (got '%s')", d.Type)
+	}
+
+	// For local and external, name and api_token are required
+	if d.Type == "local" || d.Type == "external" {
+		if d.Name == "" {
+			return fmt.Errorf("name is required for type '%s'", d.Type)
+		}
+		if d.APIToken == "" {
+			return fmt.Errorf("api_token is required for type '%s'", d.Type)
+		}
+	}
+
+	return nil
+}
+
+// GetPrimaryDomain returns the primary domain configuration
+func (c *Config) GetPrimaryDomain() *Domain {
+	for i := range c.Domains {
+		if c.Domains[i].IsPrimary {
+			return &c.Domains[i]
+		}
+	}
+	return nil
+}
+
+// GetPrimaryDomainName returns the primary domain name
+func (c *Config) GetPrimaryDomainName() string {
+	if d := c.GetPrimaryDomain(); d != nil {
+		return d.Name
+	}
+	return ""
+}
+
+// GetSecondaryDomains returns all non-primary domains
+func (c *Config) GetSecondaryDomains() []Domain {
+	var secondary []Domain
+	for _, d := range c.Domains {
+		if !d.IsPrimary {
+			secondary = append(secondary, d)
+		}
+	}
+	return secondary
+}
+
+// HasSubdomainRole checks if a domain has a subdomain with the specified role
+func (d *Domain) HasSubdomainRole(role string) bool {
+	for _, sub := range d.Subdomains {
+		if sub.Role == role {
+			return true
+		}
+	}
+	return false
+}
+
+// GetSubdomainByRole returns the subdomain with the specified role
+func (d *Domain) GetSubdomainByRole(role string) *Subdomain {
+	for i := range d.Subdomains {
+		if d.Subdomains[i].Role == role {
+			return &d.Subdomains[i]
+		}
+	}
+	return nil
+}
+
 // GenerateSkeleton creates a skeleton configuration
 func GenerateSkeleton() *Config {
 	return &Config{
-		PrimaryDomain: "example.com",
-		ServerIP:      "YOUR_SERVER_IP",
-		// SystemUsers is optional - omitted from skeleton
-		SystemUsers: []SystemUser{},
-		Subdomains: []Subdomain{
-			{Name: "adm", Role: "webadmin"},
-			{Name: "mail", Role: "mailserver"},
-			{Name: "webmail", Role: "webmail"},
-			{Name: "www", Role: "website"},
+		ServerIP: "YOUR_SERVER_IP",
+		DNSProvider: &DNSProviderConfig{
+			Type:     "external",
+			Name:     "hostinger",
+			APIToken: "YOUR_API_TOKEN",
 		},
-		EmailAccounts: []EmailAccount{
+		Domains: []Domain{
 			{
-				Username: "admin",
-				Password: "CHANGE_THIS_PASSWORD",
-				FullName: "Administrator",
+				Name:      "example.com",
+				IsPrimary: true,
+				Subdomains: []Subdomain{
+					{Name: "adm", Role: "webadmin"},
+					{Name: "mail", Role: "mailserver"},
+					{Name: "webmail", Role: "webmail"},
+					{Name: "www", Role: "website"},
+				},
+				WebAdmin: &WebAdminConfig{
+					Username: "admin",
+					Password: "__RANDOM__",
+				},
+				EmailAccounts: []EmailAccount{
+					{
+						Username: "admin",
+						Password: "__RANDOM__",
+						FullName: "Administrator",
+					},
+				},
+				DomainUser: &DomainUserConfig{
+					Password:   "__RANDOM__",
+					SSHKeyMode: "auto",
+				},
 			},
 		},
+		SystemUsers: []SystemUser{},
 	}
 }
 
-// GetDNSRecords generates DNS records for the configuration
-func (c *Config) GetDNSRecords(dkimPublicKey string) []DNSRecord {
+// GetDNSRecords generates DNS records for a specific domain
+func (c *Config) GetDNSRecords(domain *Domain, dkimPublicKey string) []DNSRecord {
 	// Get current timestamp for SOA serial (YYYYMMDDnn format)
 	serial := time.Now().Format("2006010215") // YYYYMMDDnn format
 
+	primaryDomain := c.GetPrimaryDomainName()
+	mailServer := fmt.Sprintf("mail.%s", primaryDomain)
+
 	records := []DNSRecord{
 		// SOA record (required for PowerDNS to be authoritative)
-		{Type: "SOA", Name: "@", Content: fmt.Sprintf("ns1.%s. hostmaster.%s. %s 10800 3600 604800 3600", c.PrimaryDomain, c.PrimaryDomain, serial), TTL: 86400},
+		{Type: "SOA", Name: "@", Content: fmt.Sprintf("ns1.%s. hostmaster.%s. %s 10800 3600 604800 3600", primaryDomain, domain.Name, serial), TTL: 86400},
 
-		// NS record (nameserver)
-		{Type: "NS", Name: "@", Content: fmt.Sprintf("ns1.%s.", c.PrimaryDomain), TTL: 3600},
-
-		// A record for nameserver
-		{Type: "A", Name: "ns1", Content: c.ServerIP, TTL: 3600},
+		// NS record (nameserver) - points to primary domain's NS
+		{Type: "NS", Name: "@", Content: fmt.Sprintf("ns1.%s.", primaryDomain), TTL: 3600},
 
 		// A record for domain
 		{Type: "A", Name: "@", Content: c.ServerIP, TTL: 300},
 
-		// A records for subdomains
-		{Type: "A", Name: "mail", Content: c.ServerIP, TTL: 3600},
-		{Type: "A", Name: "webmail", Content: c.ServerIP, TTL: 300},
-		{Type: "A", Name: "adm", Content: c.ServerIP, TTL: 300},
-		{Type: "A", Name: "www", Content: c.ServerIP, TTL: 300},
-
-		// CNAME
-		{Type: "CNAME", Name: "www", Content: c.PrimaryDomain, TTL: 300},
-
-		// MX record
-		{Type: "MX", Name: "@", Content: fmt.Sprintf("mail.%s", c.PrimaryDomain), Priority: 10, TTL: 14400},
+		// MX record - all domains point to the primary mail server
+		{Type: "MX", Name: "@", Content: mailServer, Priority: 10, TTL: 14400},
 
 		// SPF record
 		{Type: "TXT", Name: "@", Content: fmt.Sprintf("v=spf1 ip4:%s -all", c.ServerIP), TTL: 14400},
 
 		// DMARC record
-		{Type: "TXT", Name: "_dmarc", Content: fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", c.PrimaryDomain), TTL: 3600},
+		{Type: "TXT", Name: "_dmarc", Content: fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", domain.Name), TTL: 3600},
 
 		// CAA records for Let's Encrypt
 		{Type: "CAA", Name: "@", Content: `0 issue "letsencrypt.org"`, TTL: 14400},
 		{Type: "CAA", Name: "@", Content: `0 issuewild "letsencrypt.org"`, TTL: 14400},
+	}
+
+	// Add A records for subdomains
+	for _, sub := range domain.Subdomains {
+		records = append(records, DNSRecord{
+			Type:    "A",
+			Name:    sub.Name,
+			Content: c.ServerIP,
+			TTL:     300,
+		})
+	}
+
+	// For primary domain, add NS1 A record
+	if domain.IsPrimary {
+		records = append(records, DNSRecord{
+			Type:    "A",
+			Name:    "ns1",
+			Content: c.ServerIP,
+			TTL:     3600,
+		})
 	}
 
 	// Add DKIM record if key is provided
