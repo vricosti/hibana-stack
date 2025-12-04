@@ -83,6 +83,18 @@ dns_provider:
   {{- if .DNSProvider.APIToken }}
   api_token: "{{ .DNSProvider.APIToken }}"
   {{- end }}
+  {{- if .DNSProvider.Endpoint }}
+  endpoint: "{{ .DNSProvider.Endpoint }}"
+  {{- end }}
+  {{- if .DNSProvider.ApplicationKey }}
+  application_key: "{{ .DNSProvider.ApplicationKey }}"
+  {{- end }}
+  {{- if .DNSProvider.ApplicationSecret }}
+  application_secret: "{{ .DNSProvider.ApplicationSecret }}"
+  {{- end }}
+  {{- if .DNSProvider.ConsumerKey }}
+  consumer_key: "{{ .DNSProvider.ConsumerKey }}"
+  {{- end }}
 {{- end }}
 
 # Primary domain (for backwards compatibility)

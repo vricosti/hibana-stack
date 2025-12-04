@@ -19,9 +19,15 @@ type Config struct {
 
 // DNSProviderConfig represents DNS provider configuration
 type DNSProviderConfig struct {
-	Type     string `yaml:"type"`               // "local", "external", or "manual"
-	Name     string `yaml:"name,omitempty"`     // Provider name (required for local and external)
-	APIToken string `yaml:"api_token,omitempty"` // API token (required for local and external)
+	Type     string `yaml:"type"`                // "local", "external", or "manual"
+	Name     string `yaml:"name,omitempty"`      // Provider name: hostinger, cloudflare, ovh
+	APIToken string `yaml:"api_token,omitempty"` // API token (for hostinger, cloudflare)
+
+	// OVH-specific credentials (from https://eu.api.ovh.com/createToken/)
+	Endpoint          string `yaml:"endpoint,omitempty"`           // OVH endpoint: ovh-eu, ovh-ca, ovh-us, etc.
+	ApplicationKey    string `yaml:"application_key,omitempty"`    // OVH application key
+	ApplicationSecret string `yaml:"application_secret,omitempty"` // OVH application secret
+	ConsumerKey       string `yaml:"consumer_key,omitempty"`       // OVH consumer key
 }
 
 // Domain represents a domain configuration
@@ -162,13 +168,43 @@ func (d *DNSProviderConfig) Validate() error {
 		return fmt.Errorf("type must be 'local', 'external', or 'manual' (got '%s')", d.Type)
 	}
 
-	// For local and external, name and api_token are required
+	// For local and external, name is required
 	if d.Type == "local" || d.Type == "external" {
 		if d.Name == "" {
 			return fmt.Errorf("name is required for type '%s'", d.Type)
 		}
-		if d.APIToken == "" {
-			return fmt.Errorf("api_token is required for type '%s'", d.Type)
+
+		// Validate credentials based on provider
+		switch d.Name {
+		case "hostinger", "cloudflare":
+			if d.APIToken == "" {
+				return fmt.Errorf("api_token is required for provider '%s'", d.Name)
+			}
+		case "ovh":
+			if d.ApplicationKey == "" {
+				return fmt.Errorf("application_key is required for provider 'ovh'")
+			}
+			if d.ApplicationSecret == "" {
+				return fmt.Errorf("application_secret is required for provider 'ovh'")
+			}
+			if d.ConsumerKey == "" {
+				return fmt.Errorf("consumer_key is required for provider 'ovh'")
+			}
+			// Set default endpoint if not specified
+			if d.Endpoint == "" {
+				d.Endpoint = "ovh-eu"
+			}
+			// Validate endpoint
+			validEndpoints := map[string]bool{
+				"ovh-eu": true, "ovh-ca": true, "ovh-us": true,
+				"soyoustart-eu": true, "soyoustart-ca": true,
+				"kimsufi-eu": true, "kimsufi-ca": true,
+			}
+			if !validEndpoints[d.Endpoint] {
+				return fmt.Errorf("invalid OVH endpoint '%s' (valid: ovh-eu, ovh-ca, ovh-us, soyoustart-eu, soyoustart-ca, kimsufi-eu, kimsufi-ca)", d.Endpoint)
+			}
+		default:
+			return fmt.Errorf("unsupported DNS provider '%s' (supported: hostinger, cloudflare, ovh)", d.Name)
 		}
 	}
 
