@@ -11,7 +11,29 @@ server_ip: YOUR_SERVER_IP
 # name: Provider name (required for local and external)
 #   Supported: hostinger, cloudflare, ovh
 #
-# api_token: Provider API token (required for local and external)
+# Credentials depend on the provider:
+#
+# For Hostinger:
+#   dns_provider:
+#     type: external
+#     name: hostinger
+#     api_token: YOUR_API_TOKEN
+#
+# For Cloudflare:
+#   dns_provider:
+#     type: external
+#     name: cloudflare
+#     api_token: YOUR_API_TOKEN
+#
+# For OVH (requires 3 credentials from https://eu.api.ovh.com/createToken/):
+#   dns_provider:
+#     type: external
+#     name: ovh
+#     endpoint: ovh-eu              # ovh-eu, ovh-ca, ovh-us, soyoustart-eu, kimsufi-eu
+#     application_key: YOUR_APP_KEY
+#     application_secret: YOUR_APP_SECRET
+#     consumer_key: YOUR_CONSUMER_KEY
+
 dns_provider:
   type: external
   name: hostinger
