@@ -1,62 +1,86 @@
-primary_domain: example.com
 server_ip: YOUR_SERVER_IP
 
-# DNS provider configuration (optional)
-# If configured, DNS records will be automatically created/updated
-# Supported providers: hostinger
-# dns_provider:
-#   name: hostinger
-#   api_token: YOUR_HOSTINGER_API_TOKEN
+# DNS provider configuration
+# Choose how DNS records are managed for your domains
+#
+# type: local | external | manual
+#   - local: PowerDNS installed on this server (NS records configured via provider API)
+#   - external: All DNS records managed via provider API
+#   - manual: No automatic DNS management (you configure records manually)
+#
+# name: Provider name (required for local and external)
+#   Supported: hostinger, cloudflare, ovh
+#
+# api_token: Provider API token (required for local and external)
+dns_provider:
+  type: external
+  name: hostinger
+  api_token: YOUR_API_TOKEN
 
-subdomains:
-    - name: adm
-      role: webadmin
-    - name: mail
-      role: mailserver
-    - name: webmail
-      role: webmail
-    - name: www
-      role: website
+# List of domains managed by this server
+domains:
+  # Primary domain (exactly one domain must have is_primary: true)
+  # Shared services (mail server, admin interface) are installed on this domain
+  - name: example.com
+    is_primary: true
+    subdomains:
+      - name: adm
+        role: webadmin
+      - name: mail
+        role: mailserver
+      - name: webmail
+        role: webmail
+      - name: www
+        role: website
 
-# Web admin credentials (for adm.example.com)
-# Used to login to the administration interface
-webadmin:
-    username: admin
-    password: __RANDOM_WEBADMIN_PASSWORD__
+    # Web admin credentials (for adm.example.com)
+    webadmin:
+      username: admin
+      password: __RANDOM__
 
-# Email accounts for the domain
-email_accounts:
-    - username: admin
-      password: __RANDOM_EMAIL_PASSWORD__
-      full_name: Administrator
+    # Email accounts for this domain
+    email_accounts:
+      - username: admin
+        password: __RANDOM__
+        full_name: Administrator
 
-# Domain user configuration
-# Creates a dedicated system user for managing the domain (e.g., example_com)
-# The user will have access to /srv/example.com/ and limited docker commands
-# Can login via SSH with password or SSH key
-domain_user:
-  # Password for SSH login (auto-generated)
-  password: __RANDOM_DOMAIN_USER_PASSWORD__
+    # Domain user configuration
+    # Creates a dedicated system user for managing the domain (e.g., example_com)
+    # The user will have access to /srv/example.com/ and limited docker commands
+    domain_user:
+      password: __RANDOM__
+      # SSH key mode: "auto" or "manual"
+      # - auto: Automatically generate SSH key pair (private key displayed once)
+      # - manual: Use the SSH public key provided below
+      ssh_key_mode: auto
+      # ssh_public_key: "ssh-ed25519 AAAAC3..." (required only in manual mode)
 
-  # SSH key mode: "auto" or "manual"
-  # - auto: Automatically generate SSH key pair (private key will be displayed once)
-  # - manual: Use the SSH public key provided below
-  ssh_key_mode: auto
-
-  # SSH public key (required only in manual mode)
-  # Example:
-  # ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBtpvjKPQGY8mMxJZT... user@example.com"
-  # ssh_public_key: ""
+  # Additional domain example (optional)
+  # - name: otherdomain.com
+  #   is_primary: false
+  #   subdomains:
+  #     - name: webmail
+  #       role: webmail
+  #     - name: www
+  #       role: website
+  #   email_accounts:
+  #     - username: contact
+  #       password: __RANDOM__
+  #       full_name: Contact
+  #     - username: info
+  #       password: __RANDOM__
+  #       full_name: Info
+  #   domain_user:
+  #     password: __RANDOM__
+  #     ssh_key_mode: auto
 
 # Optional: Domain redirects
 # Redirect domains to another URL. DNS for source domains must point to this server.
 # domain_redirects:
-#   - from: toto.fr                    # toto.fr -> https://example.com (primary domain)
-#   - from: toto.eu
-#     to: https://titi.com             # toto.eu -> https://titi.com
-#   - from: old-site.com
-#     to: https://new-site.com
-#     permanent: true                  # 301 permanent redirect (default: 302 temporary)
+#   - from: example.fr                  # example.fr -> https://example.com (primary domain)
+#   - from: example.eu
+#     to: https://other-site.com        # example.eu -> https://other-site.com
+#     permanent: true                   # 301 permanent redirect (default: 302 temporary)
 
 # Optional: System users with sudo access (for administrators)
 # system_users:

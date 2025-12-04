@@ -11,7 +11,7 @@ import (
 func (i *Installer) SetupTraefik() error {
 	// Open firewall ports for web services
 	if err := i.openWebPorts(); err != nil {
-		fmt.Printf("⚠️  Warning: failed to open web ports in firewall: %v\n", err)
+		fmt.Printf("Warning: failed to open web ports in firewall: %v\n", err)
 		fmt.Println("   You may need to open ports manually: 80 (HTTP), 443 (HTTPS)")
 	}
 
@@ -45,7 +45,12 @@ func (i *Installer) SetupTraefik() error {
 
 // createTraefikConfig creates the static Traefik configuration
 func (i *Installer) createTraefikConfig(dir string) error {
-	email := fmt.Sprintf("admin@%s", i.config.PrimaryDomain)
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
+
+	email := fmt.Sprintf("admin@%s", primaryDomain.Name)
 
 	config := fmt.Sprintf(`# Traefik Static Configuration
 [global]
@@ -166,7 +171,12 @@ func (i *Installer) createDockerNetwork() error {
 
 // createDockerCompose creates the docker-compose.yml file
 func (i *Installer) createDockerCompose(dir string) error {
-	domain := i.config.PrimaryDomain
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
+
+	domain := primaryDomain.Name
 
 	compose := fmt.Sprintf(`version: '3.8'
 
@@ -246,6 +256,11 @@ networks:
 
 // createWebContainers creates Dockerfiles and content for www and adm
 func (i *Installer) createWebContainers(dir string) error {
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
+
 	// Create www container
 	wwwDir := filepath.Join(dir, "www")
 	if err := os.MkdirAll(wwwDir, 0755); err != nil {
@@ -291,7 +306,7 @@ EXPOSE 80
     </div>
 </body>
 </html>
-`, i.config.PrimaryDomain, i.config.PrimaryDomain)
+`, primaryDomain.Name, primaryDomain.Name)
 
 	if err := os.WriteFile(filepath.Join(wwwDir, "Dockerfile"), []byte(wwwDockerfile), 0644); err != nil {
 		return err
@@ -346,7 +361,7 @@ EXPOSE 80
     </div>
 </body>
 </html>
-`, i.config.PrimaryDomain)
+`, primaryDomain.Name)
 
 	if err := os.WriteFile(filepath.Join(admDir, "Dockerfile"), []byte(admDockerfile), 0644); err != nil {
 		return err

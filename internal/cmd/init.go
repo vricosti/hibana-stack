@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -27,7 +28,7 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	fmt.Println("🚀 Hibana Stack Installer (Ansible)")
+	fmt.Println("Hibana Stack Installer (Ansible)")
 	fmt.Println("=" + string(make([]byte, 50)))
 	fmt.Println()
 
@@ -40,7 +41,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
-		fmt.Printf("⚠️  Configuration file not found: %s\n", cfgFile)
+		fmt.Printf("Configuration file not found: %s\n", cfgFile)
 		fmt.Println("Creating configuration file from template...")
 
 		if err := generateConfigFromTemplate(cfgFile); err != nil {
@@ -56,12 +57,26 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	fmt.Printf("✓ Configuration loaded for domain: %s\n", cfg.PrimaryDomain)
+	primaryDomain := cfg.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
+
+	fmt.Printf("Configuration loaded for primary domain: %s\n", primaryDomain.Name)
+	if len(cfg.Domains) > 1 {
+		fmt.Printf("Additional domains: %d\n", len(cfg.Domains)-1)
+		for _, d := range cfg.GetSecondaryDomains() {
+			fmt.Printf("  - %s\n", d.Name)
+		}
+	}
 
 	// Step 1.5: Verify DNS provider if specified
-	if cfg.DNSProvider != nil && cfg.DNSProvider.Name != "" && cfg.DNSProvider.APIToken != "" {
-		if err := dnsprovider.VerifyDomainOwnership(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.PrimaryDomain); err != nil {
-			return fmt.Errorf("DNS provider verification failed: %w\n\nPlease verify:\n  • Your API token is valid\n  • Domain %s is managed by your %s account\n  • The API has proper permissions", err, cfg.PrimaryDomain, cfg.DNSProvider.Name)
+	if cfg.DNSProvider != nil && cfg.DNSProvider.Type != "manual" {
+		// Verify ownership of all domains
+		for _, domain := range cfg.Domains {
+			if err := dnsprovider.VerifyDomainOwnership(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, domain.Name); err != nil {
+				return fmt.Errorf("DNS provider verification failed for %s: %w\n\nPlease verify:\n  - Your API token is valid\n  - Domain %s is managed by your %s account\n  - The API has proper permissions", domain.Name, err, domain.Name, cfg.DNSProvider.Name)
+			}
 		}
 	}
 
@@ -71,9 +86,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 3: Check Ansible installation
-	fmt.Println("\n📋 Checking Ansible installation...")
+	fmt.Println("\nChecking Ansible installation...")
 	if err := ansible.CheckAnsibleInstalled(); err != nil {
-		fmt.Printf("⚠️  Ansible is not installed\n\n")
+		fmt.Printf("Ansible is not installed\n\n")
 
 		// Install Ansible automatically
 		if err := ansible.InstallAnsible(); err != nil {
@@ -88,118 +103,134 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	version, _ := ansible.GetAnsibleVersion()
-	fmt.Printf("✓ Ansible %s detected\n", version)
+	fmt.Printf("Ansible %s detected\n", version)
 
 	// Step 4: Create Ansible workspace
-	fmt.Println("\n📂 Creating Ansible workspace...")
+	fmt.Println("\nCreating Ansible workspace...")
 	workspaceDir, err := ansible.CreateWorkspace()
 	if err != nil {
 		return fmt.Errorf("failed to create workspace: %w", err)
 	}
 	defer os.RemoveAll(workspaceDir) // Cleanup on exit
 
-	fmt.Printf("✓ Workspace created: %s\n", workspaceDir)
+	fmt.Printf("Workspace created: %s\n", workspaceDir)
 
 	// Step 5: Generate inventory
-	fmt.Println("\n📝 Generating Ansible inventory...")
+	fmt.Println("\nGenerating Ansible inventory...")
 	if err := ansible.GenerateInventory(cfg, workspaceDir); err != nil {
 		return fmt.Errorf("failed to generate inventory: %w", err)
 	}
-	fmt.Println("✓ Inventory generated")
+	fmt.Println("Inventory generated")
 
 	// Step 6: Generate group variables
-	fmt.Println("\n📝 Generating Ansible variables from configuration...")
+	fmt.Println("\nGenerating Ansible variables from configuration...")
 	if err := ansible.GenerateGroupVars(cfg, workspaceDir); err != nil {
 		return fmt.Errorf("failed to generate group vars: %w", err)
 	}
-	fmt.Println("✓ Variables generated")
+	fmt.Println("Variables generated")
 
 	// Step 7: Copy Ansible roles
-	fmt.Println("\n📦 Copying Ansible roles...")
+	fmt.Println("\nCopying Ansible roles...")
 	if err := ansible.CopyRoles(workspaceDir); err != nil {
 		return fmt.Errorf("failed to copy roles: %w", err)
 	}
-	fmt.Println("✓ Roles copied")
+	fmt.Println("Roles copied")
 
 	// Step 7.5: Build API and frontend
-	fmt.Println("\n🔨 Building API and admin interface...")
+	fmt.Println("\nBuilding API and admin interface...")
 	if err := ansible.BuildAPIAndFrontend(workspaceDir); err != nil {
-		fmt.Printf("⚠️  Warning: Failed to build API/frontend: %v\n", err)
+		fmt.Printf("Warning: Failed to build API/frontend: %v\n", err)
 		fmt.Println("   API will use placeholder. You can build manually later with:")
 		fmt.Println("   ./build-all.sh && docker-compose -f /srv/<domain>/api/docker-compose.yml up -d --build")
 	} else {
-		fmt.Println("✓ API and frontend built successfully")
+		fmt.Println("API and frontend built successfully")
 	}
 
 	// Step 8: Copy playbook
-	fmt.Println("\n📋 Copying Ansible playbook...")
+	fmt.Println("\nCopying Ansible playbook...")
 	if err := ansible.CopyPlaybook(workspaceDir); err != nil {
 		return fmt.Errorf("failed to copy playbook: %w", err)
 	}
-	fmt.Println("✓ Playbook copied")
+	fmt.Println("Playbook copied")
 
 	// Step 9: Execute ansible-playbook
-	fmt.Println("\n🚀 Executing Ansible playbook...")
+	fmt.Println("\nExecuting Ansible playbook...")
 	fmt.Println(string(make([]byte, 80)))
 
 	if err := ansible.ExecutePlaybook(workspaceDir, verbose); err != nil {
 		fmt.Println("\n" + string(make([]byte, 80)))
-		fmt.Println("❌ Ansible playbook execution failed!")
+		fmt.Println("Ansible playbook execution failed!")
 		return fmt.Errorf("playbook execution failed: %w", err)
 	}
 
 	// Step 10: Configure DNS provider if specified (after successful installation)
-	if cfg.DNSProvider != nil && cfg.DNSProvider.Name != "" && cfg.DNSProvider.APIToken != "" {
-		// Automatically configure DNS records
-		simulate := false
-		if err := dnsprovider.UpdateDNSRecords(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.PrimaryDomain, cfg.ServerIP, simulate); err != nil {
-			fmt.Printf("\n⚠️  Warning: DNS provider configuration failed: %v\n", err)
-			fmt.Printf("Please configure DNS records manually:\n")
-			fmt.Printf("  • ns1.%s  A  %s  (TTL: 14400)\n", cfg.PrimaryDomain, cfg.ServerIP)
-			fmt.Printf("  • ns2.%s  A  %s  (TTL: 14400)\n", cfg.PrimaryDomain, cfg.ServerIP)
-			fmt.Printf("  • Update nameservers to: ns1.%s, ns2.%s\n\n", cfg.PrimaryDomain, cfg.PrimaryDomain)
-		}
-
-		// Configure PTR records if mailserver role is enabled
-		if hasRole(cfg.Subdomains, "mailserver") {
-			if err := dnsprovider.ConfigurePTR(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.ServerIP, cfg.PrimaryDomain); err != nil {
-				fmt.Printf("\n⚠️  Warning: PTR configuration failed: %v\n", err)
+	if cfg.DNSProvider != nil && cfg.DNSProvider.Type != "manual" {
+		// Configure DNS for all domains
+		for _, domain := range cfg.Domains {
+			simulate := false
+			if err := dnsprovider.UpdateDNSRecords(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, domain.Name, cfg.ServerIP, simulate); err != nil {
+				fmt.Printf("\nWarning: DNS provider configuration failed for %s: %v\n", domain.Name, err)
+				fmt.Printf("Please configure DNS records manually for %s\n", domain.Name)
 			}
 		}
-	} else if hasRole(cfg.Subdomains, "mailserver") {
+
+		// Configure PTR records if mailserver role is enabled on primary domain
+		if primaryDomain.HasSubdomainRole("mailserver") {
+			if err := dnsprovider.ConfigurePTR(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.ServerIP, primaryDomain.Name); err != nil {
+				fmt.Printf("\nWarning: PTR configuration failed: %v\n", err)
+			}
+		}
+	} else if primaryDomain.HasSubdomainRole("mailserver") {
 		// No DNS provider configured but mailserver is enabled - show manual PTR instructions
-		fmt.Println("\n⚠️  PTR records must be configured manually for email deliverability:")
-		fmt.Printf("    → Set PTR for IPv4 to: mail.%s\n", cfg.PrimaryDomain)
-		fmt.Printf("    → Set PTR for IPv6 to: mail.%s\n", cfg.PrimaryDomain)
+		fmt.Println("\nPTR records must be configured manually for email deliverability:")
+		fmt.Printf("    Set PTR for IPv4 to: mail.%s\n", primaryDomain.Name)
+		fmt.Printf("    Set PTR for IPv6 to: mail.%s\n", primaryDomain.Name)
 	}
 
-	// Build list of enabled roles
+	// Build list of enabled roles for primary domain
 	enabledRoles := make(map[string]bool)
-	for _, sub := range cfg.Subdomains {
+	for _, sub := range primaryDomain.Subdomains {
 		enabledRoles[sub.Role] = true
 	}
 
 	// Final summary
 	fmt.Println("\n" + string(make([]byte, 80)))
-	fmt.Println("🎉 Hibana Stack installation complete!")
+	fmt.Println("Hibana Stack installation complete!")
 	fmt.Println(string(make([]byte, 80)))
 	fmt.Println()
 	fmt.Printf("Your services are now available at:\n")
 	if enabledRoles["webadmin"] {
-		fmt.Printf("  • Web admin:  https://adm.%s\n", cfg.PrimaryDomain)
+		fmt.Printf("  - Web admin:  https://adm.%s\n", primaryDomain.Name)
 	}
 	if enabledRoles["webmail"] {
-		fmt.Printf("  • Webmail:    https://webmail.%s\n", cfg.PrimaryDomain)
+		fmt.Printf("  - Webmail:    https://webmail.%s\n", primaryDomain.Name)
 	}
 	if enabledRoles["website"] {
-		fmt.Printf("  • Website:    https://www.%s\n", cfg.PrimaryDomain)
+		fmt.Printf("  - Website:    https://www.%s\n", primaryDomain.Name)
 	}
 	if enabledRoles["mailserver"] {
-		fmt.Printf("  • Mail:       mail.%s\n", cfg.PrimaryDomain)
+		fmt.Printf("  - Mail:       mail.%s\n", primaryDomain.Name)
 	}
+
+	// Show secondary domains
+	if len(cfg.Domains) > 1 {
+		fmt.Println("\nSecondary domains configured:")
+		for _, d := range cfg.GetSecondaryDomains() {
+			fmt.Printf("  - %s\n", d.Name)
+			for _, sub := range d.Subdomains {
+				if sub.Role == "webmail" {
+					fmt.Printf("      Webmail: https://webmail.%s\n", d.Name)
+				}
+				if sub.Role == "website" {
+					fmt.Printf("      Website: https://www.%s\n", d.Name)
+				}
+			}
+		}
+	}
+
 	fmt.Println()
 
-	if cfg.DNSProvider == nil || cfg.DNSProvider.Name == "" {
+	if cfg.DNSProvider == nil || cfg.DNSProvider.Type == "manual" {
 		fmt.Println("Don't forget to update your domain's nameservers to point to this server!")
 	} else {
 		fmt.Println("DNS records have been automatically configured via your DNS provider.")
@@ -221,27 +252,21 @@ func generateConfigFromTemplate(outputFile string) error {
 		return fmt.Errorf("failed to read template file: %w", err)
 	}
 
-	// Generate random passwords
-	webadminPassword := generateRandomPassword(16)
-	emailPassword := generateRandomPassword(16)
-	domainUserPassword := generateRandomPassword(16)
-
-	// Replace placeholders with random passwords
+	// Generate random passwords and replace all __RANDOM__ placeholders
 	content := string(templateData)
-	content = strings.Replace(content, "__RANDOM_WEBADMIN_PASSWORD__", webadminPassword, 1)
-	content = strings.Replace(content, "__RANDOM_EMAIL_PASSWORD__", emailPassword, 1)
-	content = strings.Replace(content, "__RANDOM_DOMAIN_USER_PASSWORD__", domainUserPassword, 1)
+	re := regexp.MustCompile(`__RANDOM__`)
+	content = re.ReplaceAllStringFunc(content, func(match string) string {
+		return generateRandomPassword(16)
+	})
 
 	// Write to output file
 	if err := os.WriteFile(outputFile, []byte(content), 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	fmt.Printf("✓ Configuration file created: %s\n\n", outputFile)
-	fmt.Println("Generated credentials:")
-	fmt.Printf("  • Web admin password: %s\n", webadminPassword)
-	fmt.Printf("  • Email account password: %s\n", emailPassword)
-	fmt.Printf("  • Domain user password: %s\n", domainUserPassword)
+	fmt.Printf("Configuration file created: %s\n\n", outputFile)
+	fmt.Println("Random passwords have been generated for all accounts.")
+	fmt.Println("Please review and edit the configuration file before running 'sudo hibana init' again.")
 
 	return nil
 }
@@ -265,14 +290,4 @@ func generateRandomPassword(length int) string {
 	}
 
 	return password
-}
-
-// hasRole checks if a specific role is enabled in the subdomains configuration
-func hasRole(subdomains []config.Subdomain, role string) bool {
-	for _, sub := range subdomains {
-		if sub.Role == role {
-			return true
-		}
-	}
-	return false
 }

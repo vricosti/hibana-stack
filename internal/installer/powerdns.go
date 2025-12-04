@@ -7,13 +7,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/vricosti/hibana-stack/internal/config"
 )
 
 // SetupPowerDNS configures PowerDNS server
 func (i *Installer) SetupPowerDNS() error {
 	// Open firewall ports for DNS
 	if err := i.openDNSPorts(); err != nil {
-		fmt.Printf("⚠️  Warning: failed to open DNS ports in firewall: %v\n", err)
+		fmt.Printf("Warning: failed to open DNS ports in firewall: %v\n", err)
 		fmt.Println("   You may need to open ports 53/tcp and 53/udp manually")
 	}
 
@@ -37,9 +39,9 @@ func (i *Installer) SetupPowerDNS() error {
 		return fmt.Errorf("failed to configure resolv.conf: %w", err)
 	}
 
-	// Store domain in Hibana database now (before mail server setup)
-	if err := i.ensureDomainInHibana(); err != nil {
-		return fmt.Errorf("failed to store domain in Hibana database: %w", err)
+	// Store all domains in Hibana database now (before mail server setup)
+	if err := i.ensureDomainsInHibana(); err != nil {
+		return fmt.Errorf("failed to store domains in Hibana database: %w", err)
 	}
 
 	return nil
@@ -71,7 +73,7 @@ func (i *Installer) testPowerDNSConnection() error {
 		return fmt.Errorf("domains table does not exist")
 	}
 
-	fmt.Println("✓ PowerDNS database connection successful")
+	fmt.Println("PowerDNS database connection successful")
 	return nil
 }
 
@@ -158,14 +160,8 @@ func (i *Installer) startPowerDNS() error {
 	return nil
 }
 
-// ConfigureDNSRecords adds DNS records for the primary domain
+// ConfigureDNSRecords adds DNS records for all domains
 func (i *Installer) ConfigureDNSRecords() error {
-	// Get DKIM public key
-	dkimPublicKey, err := i.getDKIMPublicKey()
-	if err != nil {
-		return fmt.Errorf("failed to get DKIM public key: %w", err)
-	}
-
 	// Connect to PowerDNS database
 	connStr := fmt.Sprintf("host=localhost port=5432 user=%s password=%s dbname=%s sslmode=disable",
 		pdnsUser, i.getOrGeneratePassword(pdnsUser), pdnsDatabaseName)
@@ -176,15 +172,34 @@ func (i *Installer) ConfigureDNSRecords() error {
 	}
 	defer db.Close()
 
+	// Configure DNS records for each domain
+	for _, domain := range i.config.Domains {
+		// Get DKIM public key for this domain
+		dkimPublicKey, err := i.getDKIMPublicKeyForDomain(domain.Name)
+		if err != nil {
+			fmt.Printf("Warning: failed to get DKIM public key for %s: %v\n", domain.Name, err)
+		}
+
+		// Configure DNS records for this domain
+		if err := i.configureDNSRecordsForDomain(db, &domain, dkimPublicKey); err != nil {
+			return fmt.Errorf("failed to configure DNS for %s: %w", domain.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// configureDNSRecordsForDomain configures DNS records for a specific domain
+func (i *Installer) configureDNSRecordsForDomain(db *sql.DB, domain *Domain, dkimPublicKey string) error {
 	// Check if domain already exists
 	var domainID int
-	err = db.QueryRow("SELECT id FROM domains WHERE name = $1", i.config.PrimaryDomain).Scan(&domainID)
+	err := db.QueryRow("SELECT id FROM domains WHERE name = $1", domain.Name).Scan(&domainID)
 
 	if err == sql.ErrNoRows {
 		// Create domain with MASTER type (required for PowerDNS to be authoritative)
 		err = db.QueryRow(
 			"INSERT INTO domains (name, type) VALUES ($1, 'MASTER') RETURNING id",
-			i.config.PrimaryDomain,
+			domain.Name,
 		).Scan(&domainID)
 
 		if err != nil {
@@ -195,7 +210,7 @@ func (i *Installer) ConfigureDNSRecords() error {
 	}
 
 	// Update existing domains to MASTER type if they are NATIVE
-	_, err = db.Exec("UPDATE domains SET type = 'MASTER' WHERE name = $1 AND type = 'NATIVE'", i.config.PrimaryDomain)
+	_, err = db.Exec("UPDATE domains SET type = 'MASTER' WHERE name = $1 AND type = 'NATIVE'", domain.Name)
 	if err != nil {
 		return fmt.Errorf("failed to update domain type: %w", err)
 	}
@@ -207,15 +222,15 @@ func (i *Installer) ConfigureDNSRecords() error {
 	}
 
 	// Get DNS records from config
-	records := i.config.GetDNSRecords(dkimPublicKey)
+	records := i.config.GetDNSRecords(domain, dkimPublicKey)
 
 	// Insert records
 	for _, record := range records {
 		name := record.Name
 		if name == "@" || name == "" {
-			name = i.config.PrimaryDomain
-		} else if name != i.config.PrimaryDomain {
-			name = fmt.Sprintf("%s.%s", record.Name, i.config.PrimaryDomain)
+			name = domain.Name
+		} else if name != domain.Name {
+			name = fmt.Sprintf("%s.%s", record.Name, domain.Name)
 		}
 
 		// Handle CNAME specially
@@ -235,16 +250,19 @@ func (i *Installer) ConfigureDNSRecords() error {
 	}
 
 	// Store domain in Hibana database
-	if err := i.storeDomainInHibana(domainID); err != nil {
+	if err := i.storeDomainInHibana(domain, domainID); err != nil {
 		return fmt.Errorf("failed to store domain in Hibana database: %w", err)
 	}
 
 	return nil
 }
 
-// getDKIMPublicKey retrieves the DKIM public key
-func (i *Installer) getDKIMPublicKey() (string, error) {
-	keyPath := filepath.Join("/etc/opendkim/keys", i.config.PrimaryDomain, "default.txt")
+// Domain type alias for config.Domain
+type Domain = config.Domain
+
+// getDKIMPublicKeyForDomain retrieves the DKIM public key for a specific domain
+func (i *Installer) getDKIMPublicKeyForDomain(domainName string) (string, error) {
+	keyPath := filepath.Join("/etc/opendkim/keys", domainName, "default.txt")
 
 	data, err := os.ReadFile(keyPath)
 	if err != nil {
@@ -257,21 +275,30 @@ func (i *Installer) getDKIMPublicKey() (string, error) {
 	return publicKey, nil
 }
 
+// getDKIMPublicKey retrieves the DKIM public key (for primary domain - backwards compatibility)
+func (i *Installer) getDKIMPublicKey() (string, error) {
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return "", fmt.Errorf("no primary domain configured")
+	}
+	return i.getDKIMPublicKeyForDomain(primaryDomain.Name)
+}
+
 // storeDomainInHibana stores domain info in Hibana database and creates domain user
-func (i *Installer) storeDomainInHibana(pdnsDomainID int) error {
+func (i *Installer) storeDomainInHibana(domain *Domain, pdnsDomainID int) error {
 	if i.db == nil {
 		return fmt.Errorf("Hibana database not connected")
 	}
 
 	// Check if domain exists
 	var id int
-	err := i.db.QueryRow("SELECT id FROM domains WHERE name = $1", i.config.PrimaryDomain).Scan(&id)
+	err := i.db.QueryRow("SELECT id FROM domains WHERE name = $1", domain.Name).Scan(&id)
 
 	if err == sql.ErrNoRows {
 		// Insert domain
 		_, err = i.db.Exec(
 			"INSERT INTO domains (name, server_ip) VALUES ($1, $2)",
-			i.config.PrimaryDomain, i.config.ServerIP,
+			domain.Name, i.config.ServerIP,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert domain: %w", err)
@@ -281,8 +308,8 @@ func (i *Installer) storeDomainInHibana(pdnsDomainID int) error {
 	}
 
 	// Create domain user if configuration is provided
-	if i.config.DomainUser != nil {
-		fmt.Printf("\n📋 Setting up domain user for %s\n", i.config.PrimaryDomain)
+	if domain.DomainUser != nil {
+		fmt.Printf("\nSetting up domain user for %s\n", domain.Name)
 
 		// Ensure hibana-domains group exists
 		if err := i.EnsureHibanaDomainGroup(); err != nil {
@@ -296,25 +323,25 @@ func (i *Installer) storeDomainInHibana(pdnsDomainID int) error {
 
 		// Get SSH public key from config
 		sshPubKey := ""
-		if i.config.DomainUser.SSHPublicKey != "" {
-			sshPubKey = i.config.DomainUser.SSHPublicKey
+		if domain.DomainUser.SSHPublicKey != "" {
+			sshPubKey = domain.DomainUser.SSHPublicKey
 		}
 
 		// Create or update domain user
-		result, err := i.CreateDomainUser(i.config.PrimaryDomain, sshPubKey)
+		result, err := i.CreateDomainUser(domain.Name, sshPubKey)
 		if err != nil {
 			return fmt.Errorf("failed to create domain user: %w", err)
 		}
 
 		// Store domain user in database
-		if err := i.StoreDomainUser(i.config.PrimaryDomain, result); err != nil {
+		if err := i.StoreDomainUser(domain.Name, result); err != nil {
 			return fmt.Errorf("failed to store domain user: %w", err)
 		}
 
 		// If private key was generated, display it to the user
 		if result.PrivateKey != "" {
 			fmt.Println("\n" + strings.Repeat("=", 80))
-			fmt.Println("⚠️  IMPORTANT: SSH Private Key Generated")
+			fmt.Println("IMPORTANT: SSH Private Key Generated")
 			fmt.Println(strings.Repeat("=", 80))
 			fmt.Printf("\nA new SSH key pair has been generated for user: %s\n", result.Username)
 			fmt.Println("\nPrivate Key (save this securely - it will not be shown again):")
@@ -328,10 +355,10 @@ func (i *Installer) storeDomainInHibana(pdnsDomainID int) error {
 			fmt.Println("\n" + strings.Repeat("=", 80))
 		}
 
-		fmt.Printf("\n✅ Domain user %s created successfully\n", result.Username)
-		fmt.Printf("   • Access restricted to: /srv/%s/\n", i.config.PrimaryDomain)
-		fmt.Printf("   • Docker commands enabled for domain containers\n")
-		fmt.Printf("   • SSH key authentication only (no password)\n\n")
+		fmt.Printf("\nDomain user %s created successfully\n", result.Username)
+		fmt.Printf("   - Access restricted to: /srv/%s/\n", domain.Name)
+		fmt.Printf("   - Docker commands enabled for domain containers\n")
+		fmt.Printf("   - SSH key authentication only (no password)\n\n")
 	}
 
 	return nil
@@ -390,43 +417,42 @@ nameserver 1.1.1.1
 	cmd := exec.Command("chattr", "+i", "/etc/resolv.conf")
 	if err := cmd.Run(); err != nil {
 		// Just warn, not critical
-		fmt.Println("  ⚠️  Warning: Could not make /etc/resolv.conf immutable")
+		fmt.Println("  Warning: Could not make /etc/resolv.conf immutable")
 	}
 
-	fmt.Println("  ✓ DNS resolution configured")
+	fmt.Println("  DNS resolution configured")
 	return nil
 }
 
-// ensureDomainInHibana ensures the primary domain exists in Hibana database
-func (i *Installer) ensureDomainInHibana() error {
+// ensureDomainsInHibana ensures all domains exist in Hibana database
+func (i *Installer) ensureDomainsInHibana() error {
 	if i.db == nil {
 		return fmt.Errorf("Hibana database not connected")
 	}
 
-	// Check if domain exists
-	var id int
-	err := i.db.QueryRow("SELECT id FROM domains WHERE name = $1", i.config.PrimaryDomain).Scan(&id)
+	for _, domain := range i.config.Domains {
+		// Check if domain exists
+		var id int
+		err := i.db.QueryRow("SELECT id FROM domains WHERE name = $1", domain.Name).Scan(&id)
 
-	if err == sql.ErrNoRows {
-		// Insert domain
-		fmt.Printf("  Storing domain %s in Hibana database...\n", i.config.PrimaryDomain)
-		_, err = i.db.Exec(
-			"INSERT INTO domains (name, server_ip) VALUES ($1, $2)",
-			i.config.PrimaryDomain, i.config.ServerIP,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to insert domain: %w", err)
+		if err == sql.ErrNoRows {
+			// Insert domain
+			fmt.Printf("  Storing domain %s in Hibana database...\n", domain.Name)
+			_, err = i.db.Exec(
+				"INSERT INTO domains (name, server_ip) VALUES ($1, $2)",
+				domain.Name, i.config.ServerIP,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to insert domain %s: %w", domain.Name, err)
+			}
+			fmt.Printf("  Domain %s stored\n", domain.Name)
+		} else if err != nil {
+			return fmt.Errorf("failed to check domain %s: %w", domain.Name, err)
+		} else {
+			fmt.Printf("  Domain %s already exists in database\n", domain.Name)
 		}
-		fmt.Println("  ✓ Domain stored")
-		return nil
 	}
 
-	if err != nil {
-		return fmt.Errorf("failed to check domain: %w", err)
-	}
-
-	// Domain already exists
-	fmt.Println("  ✓ Domain already exists in database")
 	return nil
 }
 

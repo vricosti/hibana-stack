@@ -204,7 +204,10 @@ spamassassin unix -     n       n       -       -       pipe
 
 // configureDovecotSieve configures Dovecot Sieve for spam filtering
 func (i *Installer) configureDovecotSieve() error {
-	domain := i.config.PrimaryDomain
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
 
 	// Update Dovecot configuration to enable Sieve
 	sieveConfig := `
@@ -275,23 +278,25 @@ if header :contains "X-Spam-Level" "**********" {
 		return fmt.Errorf("failed to compile sieve script: %w", err)
 	}
 
-	// Create per-user Sieve scripts for each email account
-	for _, account := range i.config.EmailAccounts {
-		userSieveDir := fmt.Sprintf("/var/mail/vhosts/%s/%s/sieve", domain, account.Username)
-		if err := os.MkdirAll(userSieveDir, 0770); err != nil {
-			continue // Skip if fails
+	// Create per-user Sieve scripts for each email account in all domains
+	for _, domain := range i.config.Domains {
+		for _, account := range domain.EmailAccounts {
+			userSieveDir := fmt.Sprintf("/var/mail/vhosts/%s/%s/sieve", domain.Name, account.Username)
+			if err := os.MkdirAll(userSieveDir, 0770); err != nil {
+				continue // Skip if fails
+			}
+
+			userSievePath := userSieveDir + "/spam-filter.sieve"
+			if err := os.WriteFile(userSievePath, []byte(defaultSieve), 0644); err != nil {
+				continue
+			}
+
+			// Compile user script
+			exec.Command("sievec", userSievePath).Run()
+
+			// Set proper ownership
+			exec.Command("chown", "-R", "vmail:vmail", userSieveDir).Run()
 		}
-
-		userSievePath := userSieveDir + "/spam-filter.sieve"
-		if err := os.WriteFile(userSievePath, []byte(defaultSieve), 0644); err != nil {
-			continue
-		}
-
-		// Compile user script
-		exec.Command("sievec", userSievePath).Run()
-
-		// Set proper ownership
-		exec.Command("chown", "-R", "vmail:vmail", userSieveDir).Run()
 	}
 
 	return nil

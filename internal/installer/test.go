@@ -11,17 +11,21 @@ import (
 // TestEmailTo tests email sending to a specified address
 func (i *Installer) TestEmailTo(testEmail string) error {
 	if testEmail == "" {
-		fmt.Println("⚠️  No test email address provided, skipping email test")
+		fmt.Println("No test email address provided, skipping email test")
 		return nil
 	}
 
-	domain := i.config.PrimaryDomain
-	if len(i.config.EmailAccounts) == 0 {
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
+
+	if len(primaryDomain.EmailAccounts) == 0 {
 		return fmt.Errorf("no email accounts configured")
 	}
 
-	fromAccount := i.config.EmailAccounts[0]
-	fromEmail := fmt.Sprintf("%s@%s", fromAccount.Username, domain)
+	fromAccount := primaryDomain.EmailAccounts[0]
+	fromEmail := fmt.Sprintf("%s@%s", fromAccount.Username, primaryDomain.Name)
 
 	fmt.Printf("Testing email from %s to %s...\n", fromEmail, testEmail)
 
@@ -30,11 +34,11 @@ func (i *Installer) TestEmailTo(testEmail string) error {
 		return fmt.Errorf("failed to send test email: %w", err)
 	}
 
-	fmt.Println("✓ Test email sent successfully")
+	fmt.Println("Test email sent successfully")
 
 	// Test 2: Check mail queue
 	if err := i.checkMailQueue(); err != nil {
-		fmt.Printf("⚠️  Warning: mail queue check failed: %v\n", err)
+		fmt.Printf("Warning: mail queue check failed: %v\n", err)
 	}
 
 	return nil
@@ -42,7 +46,11 @@ func (i *Installer) TestEmailTo(testEmail string) error {
 
 // sendTestEmailTo sends a test email via SMTP to a specified address
 func (i *Installer) sendTestEmailTo(from, password, to string) error {
-	domain := i.config.PrimaryDomain
+	primaryDomain := i.config.GetPrimaryDomain()
+	if primaryDomain == nil {
+		return fmt.Errorf("no primary domain configured")
+	}
+
 	smtpPort := "587"
 	subject := "Hibana Stack - Test Email"
 	body := fmt.Sprintf(`This is a test email from your Hibana Stack installation.
@@ -56,7 +64,7 @@ If you received this email, your mail server is configured correctly!
 --
 Hibana Stack
 https://github.com/vricosti/hibana-stack
-`, domain, from, time.Now().Format(time.RFC1123))
+`, primaryDomain.Name, from, time.Now().Format(time.RFC1123))
 
 	message := []byte(fmt.Sprintf("From: %s\r\n"+
 		"To: %s\r\n"+
@@ -102,7 +110,7 @@ func (i *Installer) checkMailQueue() error {
 
 	// Check if queue is empty
 	if strings.Contains(queueOutput, "Mail queue is empty") {
-		fmt.Println("✓ Mail queue is empty (all messages delivered)")
+		fmt.Println("Mail queue is empty (all messages delivered)")
 		return nil
 	}
 
