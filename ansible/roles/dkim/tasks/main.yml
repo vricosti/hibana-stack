@@ -1,25 +1,28 @@
 ---
-- name: Create OpenDKIM keys directory
+- name: Create OpenDKIM keys directory for all domains
   file:
-    path: /etc/opendkim/keys/{{ primary_domain }}
+    path: /etc/opendkim/keys/{{ item.name }}
     state: directory
     owner: opendkim
     group: opendkim
     mode: '0750'
+  loop: "{{ domains }}"
 
-- name: Check if DKIM private key exists
+- name: Check if DKIM private key exists for each domain
   stat:
-    path: /etc/opendkim/keys/{{ primary_domain }}/default.private
-  register: dkim_private_key
+    path: /etc/opendkim/keys/{{ item.name }}/default.private
+  register: dkim_private_keys
+  loop: "{{ domains }}"
 
-- name: Generate DKIM keys
+- name: Generate DKIM keys for domains without keys
   command: >
     opendkim-genkey
     -b 2048
-    -d {{ primary_domain }}
+    -d {{ item.item.name }}
     -s default
-    -D /etc/opendkim/keys/{{ primary_domain }}
-  when: not dkim_private_key.stat.exists
+    -D /etc/opendkim/keys/{{ item.item.name }}
+  when: not item.stat.exists
+  loop: "{{ dkim_private_keys.results }}"
 
 - name: Set proper permissions on DKIM keys
   file:
@@ -108,24 +111,6 @@
     state: started
     enabled: yes
 
-- name: Read DKIM public key
-  slurp:
-    src: /etc/opendkim/keys/{{ primary_domain }}/default.txt
-  register: dkim_public_key_file
-
-- name: Extract DKIM public key value
-  set_fact:
-    dkim_public_key_raw: "{{ dkim_public_key_file['content'] | b64decode }}"
-
-- name: Parse DKIM public key
-  set_fact:
-    dkim_public_key: "{{ dkim_public_key_raw | regex_search('p=([^;\"\\)]+)', '\\1') | first }}"
-
-- name: Read DKIM private key
-  slurp:
-    src: /etc/opendkim/keys/{{ primary_domain }}/default.private
-  register: dkim_private_key_file
-
 - name: Read hibana database password
   slurp:
     src: /etc/hibana/passwords/hibana
@@ -135,24 +120,8 @@
   set_fact:
     hibana_db_password: "{{ hibana_password_file['content'] | b64decode | trim }}"
 
-- name: Store DKIM keys in Hibana database
-  postgresql_query:
-    db: hibana
-    login_user: hibana
-    login_password: "{{ hibana_db_password }}"
-    login_host: localhost
-    query: |
-      WITH domain_cte AS (
-        SELECT id FROM domains WHERE name = '{{ primary_domain }}'
-      )
-      INSERT INTO dkim_keys (domain_id, selector, private_key, public_key)
-      VALUES (
-        (SELECT id FROM domain_cte),
-        'default',
-        '{{ dkim_private_key_file["content"] | b64decode }}',
-        '{{ dkim_public_key }}'
-      )
-      ON CONFLICT (domain_id, selector) DO UPDATE
-      SET private_key = EXCLUDED.private_key,
-          public_key = EXCLUDED.public_key
-  become_user: postgres
+- name: Read and store DKIM keys for all domains
+  include_tasks: store_dkim_key.yml
+  loop: "{{ domains }}"
+  loop_control:
+    loop_var: domain

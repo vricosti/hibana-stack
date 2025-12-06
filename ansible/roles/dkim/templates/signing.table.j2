@@ -1,4 +1,6 @@
-{% for account in email_accounts %}
-{{ account.username }}@{{ primary_domain }}	default._domainkey.{{ primary_domain }}
+{% for domain in domains %}
+{% for account in domain.email_accounts %}
+{{ account.username }}@{{ domain.name }}	default._domainkey.{{ domain.name }}
 {% endfor %}
-*@{{ primary_domain }}	default._domainkey.{{ primary_domain }}
+*@{{ domain.name }}	default._domainkey.{{ domain.name }}
+{% endfor %}

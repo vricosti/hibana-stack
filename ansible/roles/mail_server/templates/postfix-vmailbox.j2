@@ -1,3 +1,5 @@
-{% for account in email_accounts %}
-{{ account.username }}@{{ primary_domain }} {{ primary_domain }}/{{ account.username }}/
+{% for domain in domains %}
+{% for account in domain.email_accounts %}
+{{ account.username }}@{{ domain.name }} {{ domain.name }}/{{ account.username }}/
+{% endfor %}
 {% endfor %}

@@ -1,1 +1,3 @@
-default._domainkey.{{ primary_domain }}	{{ primary_domain }}:default:/etc/opendkim/keys/{{ primary_domain }}/default.private
+{% for domain in domains %}
+default._domainkey.{{ domain.name }}	{{ domain.name }}:default:/etc/opendkim/keys/{{ domain.name }}/default.private
+{% endfor %}

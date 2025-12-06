@@ -1,0 +1,40 @@
+---
+- name: Read DKIM public key for {{ domain.name }}
+  slurp:
+    src: /etc/opendkim/keys/{{ domain.name }}/default.txt
+  register: dkim_public_key_file
+
+- name: Extract DKIM public key value for {{ domain.name }}
+  set_fact:
+    dkim_public_key_raw: "{{ dkim_public_key_file['content'] | b64decode }}"
+
+- name: Parse DKIM public key for {{ domain.name }}
+  set_fact:
+    dkim_public_key: "{{ dkim_public_key_raw | regex_search('p=([^;\"\\)]+)', '\\1') | first }}"
+
+- name: Read DKIM private key for {{ domain.name }}
+  slurp:
+    src: /etc/opendkim/keys/{{ domain.name }}/default.private
+  register: dkim_private_key_file
+
+- name: Store DKIM keys in Hibana database for {{ domain.name }}
+  postgresql_query:
+    db: hibana
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    login_host: localhost
+    query: |
+      WITH domain_cte AS (
+        SELECT id FROM domains WHERE name = '{{ domain.name }}'
+      )
+      INSERT INTO dkim_keys (domain_id, selector, private_key, public_key)
+      VALUES (
+        (SELECT id FROM domain_cte),
+        'default',
+        '{{ dkim_private_key_file["content"] | b64decode }}',
+        '{{ dkim_public_key }}'
+      )
+      ON CONFLICT (domain_id, selector) DO UPDATE
+      SET private_key = EXCLUDED.private_key,
+          public_key = EXCLUDED.public_key
+  become_user: postgres
