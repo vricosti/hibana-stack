@@ -22,11 +22,11 @@ services:
       - "mail.{{ primary_domain }}:host-gateway"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.webmail.rule=Host(`webmail.{{ primary_domain }}`)"
-      - "traefik.http.routers.webmail.entrypoints=websecure"
-      - "traefik.http.routers.webmail.tls.certresolver=letsencrypt"
-      - "traefik.http.services.webmail.loadbalancer.server.port=80"
-      - "traefik.http.routers.webmail.middlewares=security-headers@file"
+      - "traefik.http.routers.webmail-{{ primary_domain | replace('.', '-') }}.rule=Host(`webmail.{{ primary_domain }}`)"
+      - "traefik.http.routers.webmail-{{ primary_domain | replace('.', '-') }}.entrypoints=websecure"
+      - "traefik.http.routers.webmail-{{ primary_domain | replace('.', '-') }}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.webmail-{{ primary_domain | replace('.', '-') }}.loadbalancer.server.port=80"
+      - "traefik.http.routers.webmail-{{ primary_domain | replace('.', '-') }}.middlewares=security-headers@file"
 
 networks:
   traefik-network:
