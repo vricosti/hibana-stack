@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // SetupTraefik configures Traefik reverse proxy
@@ -177,6 +178,7 @@ func (i *Installer) createDockerCompose(dir string) error {
 	}
 
 	domain := primaryDomain.Name
+	domainDash := strings.ReplaceAll(domain, ".", "-")
 
 	compose := fmt.Sprintf(`version: '3.8'
 
@@ -206,10 +208,10 @@ services:
       - hibana-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.www.rule=Host(` + "`www.%s`, `%s`)" + `"
-      - "traefik.http.routers.www.entrypoints=websecure"
-      - "traefik.http.routers.www.tls.certresolver=letsencrypt"
-      - "traefik.http.services.www.loadbalancer.server.port=80"
+      - "traefik.http.routers.www-%s.rule=Host(` + "`www.%s`, `%s`)" + `"
+      - "traefik.http.routers.www-%s.entrypoints=websecure"
+      - "traefik.http.routers.www-%s.tls.certresolver=letsencrypt"
+      - "traefik.http.services.www-%s.loadbalancer.server.port=80"
 
   adm:
     build: ./adm
@@ -221,10 +223,10 @@ services:
       - DOMAIN=%s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.adm.rule=Host(` + "`adm.%s`)" + `"
-      - "traefik.http.routers.adm.entrypoints=websecure"
-      - "traefik.http.routers.adm.tls.certresolver=letsencrypt"
-      - "traefik.http.services.adm.loadbalancer.server.port=80"
+      - "traefik.http.routers.adm-%s.rule=Host(` + "`adm.%s`)" + `"
+      - "traefik.http.routers.adm-%s.entrypoints=websecure"
+      - "traefik.http.routers.adm-%s.tls.certresolver=letsencrypt"
+      - "traefik.http.services.adm-%s.loadbalancer.server.port=80"
 
   webmail:
     image: roundcube/roundcubemail:latest
@@ -240,15 +242,21 @@ services:
       - ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=30M
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.webmail.rule=Host(` + "`webmail.%s`)" + `"
-      - "traefik.http.routers.webmail.entrypoints=websecure"
-      - "traefik.http.routers.webmail.tls.certresolver=letsencrypt"
-      - "traefik.http.services.webmail.loadbalancer.server.port=80"
+      - "traefik.http.routers.webmail-%s.rule=Host(` + "`webmail.%s`)" + `"
+      - "traefik.http.routers.webmail-%s.entrypoints=websecure"
+      - "traefik.http.routers.webmail-%s.tls.certresolver=letsencrypt"
+      - "traefik.http.services.webmail-%s.loadbalancer.server.port=80"
 
 networks:
   hibana-network:
     external: true
-`, domain, domain, domain, domain, domain, domain, domain)
+`,
+		// www service labels
+		domainDash, domain, domain, domainDash, domainDash, domainDash,
+		// adm service
+		domain, domainDash, domain, domainDash, domainDash, domainDash,
+		// webmail service
+		domain, domain, domainDash, domain, domainDash, domainDash, domainDash)
 
 	composePath := filepath.Join(dir, "docker-compose.yml")
 	return os.WriteFile(composePath, []byte(compose), 0644)

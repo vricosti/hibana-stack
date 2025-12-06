@@ -14,11 +14,11 @@ services:
       - traefik-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.www.rule=Host(`www.{{ primary_domain }}`) || Host(`{{ primary_domain }}`)"
-      - "traefik.http.routers.www.entrypoints=websecure"
-      - "traefik.http.routers.www.tls.certresolver=letsencrypt"
-      - "traefik.http.services.www.loadbalancer.server.port=80"
-      - "traefik.http.routers.www.middlewares=security-headers@file,compress@file"
+      - "traefik.http.routers.www-{{ primary_domain | replace('.', '-') }}.rule=Host(`www.{{ primary_domain }}`) || Host(`{{ primary_domain }}`)"
+      - "traefik.http.routers.www-{{ primary_domain | replace('.', '-') }}.entrypoints=websecure"
+      - "traefik.http.routers.www-{{ primary_domain | replace('.', '-') }}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.www-{{ primary_domain | replace('.', '-') }}.loadbalancer.server.port=80"
+      - "traefik.http.routers.www-{{ primary_domain | replace('.', '-') }}.middlewares=security-headers@file,compress@file"
 
 networks:
   traefik-network:
