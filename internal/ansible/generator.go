@@ -56,6 +56,7 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 		DNSProvider     *config.DNSProviderConfig
 		Domains         []config.Domain
 		PrimaryDomain   string
+		Subdomains      []config.Subdomain // For backwards compatibility with Ansible roles
 		SystemUsers     []config.SystemUser
 		DomainRedirects []config.DomainRedirect
 	}
@@ -65,6 +66,7 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 		DNSProvider:     cfg.DNSProvider,
 		Domains:         cfg.Domains,
 		PrimaryDomain:   primaryDomain.Name,
+		Subdomains:      primaryDomain.Subdomains, // Extract subdomains from primary domain
 		SystemUsers:     cfg.SystemUsers,
 		DomainRedirects: cfg.DomainRedirects,
 	}
@@ -99,6 +101,13 @@ dns_provider:
 
 # Primary domain (for backwards compatibility)
 primary_domain: {{ .PrimaryDomain }}
+
+# Subdomains for primary domain (for backwards compatibility with Ansible roles)
+subdomains:
+{{- range .Subdomains }}
+  - name: {{ .Name }}
+    role: {{ .Role }}
+{{- end }}
 
 # All domains
 domains:
