@@ -29,8 +29,7 @@ echo "Go: $(go version)"
 
 # Build CLI
 echo "Building hibana CLI..."
-mkdir -p bin
-go build -buildvcs=false -o bin/hibana ./cmd/hibana
+go build -buildvcs=false -o hibana ./cmd/hibana
 
 # Build API
 echo "Building hibana API..."
@@ -64,4 +63,4 @@ CMD ["./hibana-api", "--port", "3000", "--static", "./web"]
 EOF
 
 echo ""
-echo "Setup complete. Run: sudo ./bin/hibana init"
+echo "Setup complete. Run: sudo ./hibana init"

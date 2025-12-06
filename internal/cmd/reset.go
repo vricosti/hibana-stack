@@ -88,7 +88,20 @@ func runReset(cmd *cobra.Command, args []string) error {
 	} else {
 		// Create minimal config for reset
 		cfg = &config.Config{
-			PrimaryDomain: "localhost", // Default fallback
+			ServerIP: "127.0.0.1",
+			Domains: []config.Domain{
+				{
+					Name:      "localhost",
+					IsPrimary: true,
+					EmailAccounts: []config.EmailAccount{
+						{Username: "admin", Password: "temp"},
+					},
+					WebAdmin: &config.WebAdminConfig{
+						Username: "admin",
+						Password: "temp",
+					},
+				},
+			},
 		}
 	}
 

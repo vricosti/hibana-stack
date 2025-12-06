@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -277,7 +278,6 @@ func (h *HostingerProvider) updateRecords(domain string, records []HostingerReco
 		return err
 	}
 
-	fmt.Printf("  DEBUG: Sending to API: %s\n", string(payload))
 
 	req, err := http.NewRequest("PUT", hostingerDNSAPIURL+"/zones/"+domain, bytes.NewBuffer(payload))
 	if err != nil {
@@ -435,9 +435,22 @@ func VerifyDomainOwnership(providerName, apiToken, domain string) error {
 	}
 }
 
+// DomainConfig holds domain configuration for DNS updates
+type DomainConfig struct {
+	Name       string
+	Subdomains []SubdomainConfig
+}
+
+// SubdomainConfig holds subdomain configuration
+type SubdomainConfig struct {
+	Name string
+	Role string
+}
+
 // UpdateDNSRecords updates DNS records for the given domain and server IP
+// providerType: "local" (PowerDNS - create NS records and update nameservers) or "external" (only add A records for subdomains)
 // If simulate is true, it will only log what would be done without making actual API calls
-func UpdateDNSRecords(providerName, apiToken, domain, serverIP string, simulate bool) error {
+func UpdateDNSRecords(providerName, providerType, apiToken string, domainCfg DomainConfig, serverIP string, simulate bool) error {
 	if providerName == "" || apiToken == "" {
 		// DNS provider not configured, skip
 		return nil
@@ -445,121 +458,15 @@ func UpdateDNSRecords(providerName, apiToken, domain, serverIP string, simulate 
 
 	// Normalize provider name (case insensitive)
 	providerName = strings.ToLower(strings.TrimSpace(providerName))
+	domain := domainCfg.Name
 
-	fmt.Println("\n🌐 Configuring DNS provider...")
+	fmt.Printf("\n🌐 Configuring DNS for %s (type: %s)...\n", domain, providerType)
 
 	switch providerName {
 	case "hostinger":
 		provider := NewHostingerProvider(apiToken)
 
-		if simulate {
-			// Simulation mode - fetch existing data and show what would be done
-			fmt.Println("→ [SIMULATION] Fetching current DNS configuration...")
-
-			// Fetch existing DNS records
-			existingRecords, err := provider.getRecords(domain)
-			if err != nil {
-				fmt.Printf("  ⚠ Warning: Could not fetch existing records: %v\n", err)
-			}
-
-			// Fetch current nameservers
-			currentNameservers, err := provider.GetNameservers(domain)
-			if err != nil {
-				fmt.Printf("  ⚠ Warning: Could not fetch current nameservers: %v\n", err)
-			}
-
-			// Display current state
-			fmt.Println("\n→ [SIMULATION] Current DNS configuration:")
-
-			// Show current NS records
-			if existingRecords != nil {
-				var ns1Record, ns2Record *HostingerRecord
-				for i := range existingRecords {
-					if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns1" {
-						ns1Record = &existingRecords[i]
-					}
-					if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns2" {
-						ns2Record = &existingRecords[i]
-					}
-				}
-
-				fmt.Println("  NS Records:")
-				if ns1Record != nil {
-					fmt.Printf("    • ns1.%s A %s (TTL: %d)\n", domain, ns1Record.Content, ns1Record.TTL)
-				} else {
-					fmt.Printf("    • ns1.%s - not configured\n", domain)
-				}
-				if ns2Record != nil {
-					fmt.Printf("    • ns2.%s A %s (TTL: %d)\n", domain, ns2Record.Content, ns2Record.TTL)
-				} else {
-					fmt.Printf("    • ns2.%s - not configured\n", domain)
-				}
-			}
-
-			// Show current nameservers
-			if currentNameservers != nil && len(currentNameservers) > 0 {
-				fmt.Println("  Domain Nameservers:")
-				for _, ns := range currentNameservers {
-					fmt.Printf("    • %s\n", ns)
-				}
-			} else {
-				fmt.Println("  Domain Nameservers: none configured")
-			}
-
-			// Display what would be changed
-			fmt.Println("\n→ [SIMULATION] Planned changes:")
-
-			if existingRecords != nil {
-				var ns1Record, ns2Record *HostingerRecord
-				for i := range existingRecords {
-					if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns1" {
-						ns1Record = &existingRecords[i]
-					}
-					if existingRecords[i].Type == "A" && existingRecords[i].Name == "ns2" {
-						ns2Record = &existingRecords[i]
-					}
-				}
-
-				hasChanges := false
-				if ns1Record == nil {
-					fmt.Printf("  • Would create: ns1.%s A %s (TTL: 14400)\n", domain, serverIP)
-					hasChanges = true
-				}
-				if ns2Record == nil {
-					fmt.Printf("  • Would create: ns2.%s A %s (TTL: 14400)\n", domain, serverIP)
-					hasChanges = true
-				}
-
-				// Check if nameservers need update
-				desiredNS := []string{fmt.Sprintf("ns1.%s", domain), fmt.Sprintf("ns2.%s", domain)}
-				needsNSUpdate := false
-				if len(currentNameservers) != len(desiredNS) {
-					needsNSUpdate = true
-				} else {
-					for i, ns := range currentNameservers {
-						if i >= len(desiredNS) || ns != desiredNS[i] {
-							needsNSUpdate = true
-							break
-						}
-					}
-				}
-
-				if needsNSUpdate {
-					fmt.Printf("  • Would update domain nameservers to: ns1.%s, ns2.%s\n", domain, domain)
-					hasChanges = true
-				}
-
-				if !hasChanges {
-					fmt.Println("  • No changes needed - DNS is already configured correctly")
-				}
-			}
-
-			fmt.Println("\n✓ DNS provider configuration simulated successfully")
-			return nil
-		}
-
-		// Real mode - make actual API calls
-		// First, display current configuration
+		// Fetch and display current configuration
 		fmt.Println("→ Fetching current DNS configuration...")
 
 		existingRecords, err := provider.getRecords(domain)
@@ -582,35 +489,171 @@ func UpdateDNSRecords(providerName, apiToken, domain, serverIP string, simulate 
 			}
 		}
 
-		currentNameservers, err := provider.GetNameservers(domain)
-		if err != nil {
-			fmt.Printf("  ⚠ Warning: Could not fetch current nameservers: %v\n", err)
-		} else {
-			fmt.Println("\n  Current Nameservers:")
-			if len(currentNameservers) == 0 {
-				fmt.Println("    (no nameservers configured)")
-			} else {
-				for i, ns := range currentNameservers {
-					fmt.Printf("    %d. %s\n", i+1, ns)
+		if simulate {
+			fmt.Println("\n✓ [SIMULATION] DNS configuration simulated successfully")
+			return nil
+		}
+
+		// Build list of records to create based on provider type
+		var recordsToCreate []HostingerRecord
+
+		if providerType == "local" {
+			// Local DNS (PowerDNS) - create NS records and update nameservers
+			fmt.Println("\n→ Configuring NS records for local PowerDNS...")
+			if err := provider.EnsureNSRecords(domain, serverIP); err != nil {
+				return fmt.Errorf("failed to configure NS records: %w", err)
+			}
+
+			fmt.Println("→ Updating domain nameservers...")
+			if err := provider.UpdateNameservers(domain); err != nil {
+				return fmt.Errorf("failed to update nameservers: %w", err)
+			}
+		} else if providerType == "external" {
+			// External DNS - only add A records for subdomains, MX, SPF, DMARC
+			fmt.Println("\n→ Configuring DNS records for external provider...")
+
+			// Build map of existing records for quick lookup
+			existingByNameType := make(map[string]HostingerRecord)
+			for _, r := range existingRecords {
+				key := fmt.Sprintf("%s:%s", r.Name, r.Type)
+				existingByNameType[key] = r
+			}
+
+			// Helper function to check if we should skip a record
+			shouldSkip := func(name, recordType string) (bool, string) {
+				// Check if exact record exists with correct IP
+				key := fmt.Sprintf("%s:%s", name, recordType)
+				if existing, ok := existingByNameType[key]; ok {
+					if existing.Content == serverIP {
+						return true, fmt.Sprintf("already exists with correct IP")
+					}
+					// Record exists but with different IP - we'll update it
+					return false, ""
 				}
+				// For A records, check if a CNAME exists (conflict)
+				if recordType == "A" {
+					cnameKey := fmt.Sprintf("%s:CNAME", name)
+					if _, ok := existingByNameType[cnameKey]; ok {
+						return true, fmt.Sprintf("CNAME exists, skipping A record")
+					}
+				}
+				return false, ""
+			}
+
+			// Process A record for root domain
+			if skip, reason := shouldSkip("@", "A"); skip {
+				fmt.Printf("  ℹ %s A: %s\n", domain, reason)
+			} else {
+				recordsToCreate = append(recordsToCreate, HostingerRecord{
+					Type:    "A",
+					Name:    "@",
+					Content: serverIP,
+					TTL:     300,
+				})
+			}
+
+			// Process A records for each subdomain
+			for _, sub := range domainCfg.Subdomains {
+				if skip, reason := shouldSkip(sub.Name, "A"); skip {
+					fmt.Printf("  ℹ %s.%s A: %s\n", sub.Name, domain, reason)
+				} else {
+					recordsToCreate = append(recordsToCreate, HostingerRecord{
+						Type:    "A",
+						Name:    sub.Name,
+						Content: serverIP,
+						TTL:     300,
+					})
+				}
+			}
+
+			// Check if mailserver subdomain exists
+			hasMailserver := false
+			for _, sub := range domainCfg.Subdomains {
+				if sub.Role == "mailserver" {
+					hasMailserver = true
+					break
+				}
+			}
+
+			if hasMailserver {
+				// Check MX record
+				mxContent := fmt.Sprintf("10 mail.%s", domain)
+				if existing, ok := existingByNameType["@:MX"]; ok && strings.Contains(existing.Content, fmt.Sprintf("mail.%s", domain)) {
+					fmt.Printf("  ℹ %s MX: already configured\n", domain)
+				} else {
+					recordsToCreate = append(recordsToCreate, HostingerRecord{
+						Type:    "MX",
+						Name:    "@",
+						Content: mxContent,
+						TTL:     14400,
+					})
+				}
+
+				// Check SPF record - look for existing SPF in TXT records
+				spfContent := fmt.Sprintf("v=spf1 ip4:%s -all", serverIP)
+				hasSPF := false
+				for _, r := range existingRecords {
+					if r.Type == "TXT" && r.Name == "@" && strings.HasPrefix(r.Content, "v=spf1") {
+						hasSPF = true
+						if strings.Contains(r.Content, serverIP) {
+							fmt.Printf("  ℹ %s SPF: already configured\n", domain)
+						} else {
+							fmt.Printf("  ⚠ %s SPF: exists but doesn't include %s, please update manually\n", domain, serverIP)
+						}
+						break
+					}
+				}
+				if !hasSPF {
+					recordsToCreate = append(recordsToCreate, HostingerRecord{
+						Type:    "TXT",
+						Name:    "@",
+						Content: spfContent,
+						TTL:     14400,
+					})
+				}
+
+				// Check DMARC record
+				dmarcContent := fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", domain)
+				if _, ok := existingByNameType["_dmarc:TXT"]; ok {
+					fmt.Printf("  ℹ %s DMARC: already configured\n", domain)
+				} else {
+					recordsToCreate = append(recordsToCreate, HostingerRecord{
+						Type:    "TXT",
+						Name:    "_dmarc",
+						Content: dmarcContent,
+						TTL:     3600,
+					})
+				}
+			}
+
+			// Create the records one by one to handle partial failures
+			if len(recordsToCreate) > 0 {
+				fmt.Println("\n  Creating/updating DNS records:")
+				for _, r := range recordsToCreate {
+					name := r.Name
+					if name == "@" {
+						name = domain
+					} else {
+						name = name + "." + domain
+					}
+
+					if err := provider.updateRecords(domain, []HostingerRecord{r}); err != nil {
+						fmt.Printf("    ✗ %s %s %s - %v\n", name, r.Type, r.Content, err)
+					} else {
+						fmt.Printf("    ✓ %s %s %s\n", name, r.Type, r.Content)
+					}
+				}
+			} else {
+				fmt.Println("  ℹ All DNS records already configured correctly")
+			}
+
+			// Note: DKIM will be added automatically after the playbook generates the keys
+			if hasMailserver {
+				fmt.Println("\n  ℹ DKIM record will be added after keys are generated")
 			}
 		}
 
-		fmt.Println()
-
-		// Step 1: Create ns1 and ns2 A records
-		fmt.Println("→ Configuring NS records...")
-		if err := provider.EnsureNSRecords(domain, serverIP); err != nil {
-			return fmt.Errorf("failed to configure NS records: %w", err)
-		}
-
-		// Step 2: Update domain nameservers
-		fmt.Println("→ Updating domain nameservers...")
-		if err := provider.UpdateNameservers(domain); err != nil {
-			return fmt.Errorf("failed to update nameservers: %w", err)
-		}
-
-		fmt.Println("✓ DNS provider configured successfully")
+		fmt.Println("\n✓ DNS provider configured successfully")
 		return nil
 	default:
 		return fmt.Errorf("unsupported DNS provider: %s", providerName)
@@ -625,18 +668,26 @@ const hostingerVPSAPIURL = "https://developers.hostinger.com/api/vps/v1"
 
 // VirtualMachine represents a VPS instance
 type VirtualMachine struct {
-	ID          int    `json:"id"`
-	Hostname    string `json:"hostname"`
-	State       string `json:"state"`
-	IPAddresses []IPAddress `json:"ip_addresses"`
+	ID       int         `json:"id"`
+	Hostname string      `json:"hostname"`
+	State    string      `json:"state"`
+	IPv4     []IPAddress `json:"ipv4"`
+	IPv6     []IPAddress `json:"ipv6"`
 }
 
 // IPAddress represents an IP address attached to a VPS
 type IPAddress struct {
 	ID      int    `json:"id"`
 	Address string `json:"address"`
-	Type    string `json:"type"` // "ipv4" or "ipv6"
 	PTR     string `json:"ptr,omitempty"`
+}
+
+// GetAllIPs returns all IP addresses (IPv4 and IPv6) for a VM
+func (vm *VirtualMachine) GetAllIPs() []IPAddress {
+	var all []IPAddress
+	all = append(all, vm.IPv4...)
+	all = append(all, vm.IPv6...)
+	return all
 }
 
 // GetVirtualMachines retrieves all VPS instances
@@ -677,9 +728,16 @@ func (h *HostingerProvider) FindVMByIP(serverIP string) (*VirtualMachine, *IPAdd
 	}
 
 	for i := range vms {
-		for j := range vms[i].IPAddresses {
-			if vms[i].IPAddresses[j].Address == serverIP {
-				return &vms[i], &vms[i].IPAddresses[j], nil
+		// Check IPv4 addresses
+		for j := range vms[i].IPv4 {
+			if vms[i].IPv4[j].Address == serverIP {
+				return &vms[i], &vms[i].IPv4[j], nil
+			}
+		}
+		// Check IPv6 addresses
+		for j := range vms[i].IPv6 {
+			if vms[i].IPv6[j].Address == serverIP {
+				return &vms[i], &vms[i].IPv6[j], nil
 			}
 		}
 	}
@@ -733,16 +791,38 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 
 	fmt.Printf("✓ Found VPS: %s (ID: %d)\n", vm.Hostname, vm.ID)
 
-	// Configure PTR for all IP addresses
-	for _, ip := range vm.IPAddresses {
-		fmt.Printf("→ Configuring PTR for %s (%s)...\n", ip.Address, ip.Type)
+	// Configure PTR for IPv4 addresses
+	for _, ip := range vm.IPv4 {
+		fmt.Printf("→ Configuring PTR for %s (IPv4)...\n", ip.Address)
+
+		if ip.PTR == mailHostname {
+			fmt.Printf("  ℹ PTR already configured: %s → %s\n", ip.Address, mailHostname)
+			continue
+		}
 
 		if err := h.CreatePTRRecord(vm.ID, ip.ID, mailHostname); err != nil {
 			fmt.Printf("  ⚠ Warning: Failed to set PTR for %s: %v\n", ip.Address, err)
 			continue
 		}
 
-		fmt.Printf("✓ PTR record set: %s → %s\n", ip.Address, mailHostname)
+		fmt.Printf("  ✓ PTR record set: %s → %s\n", ip.Address, mailHostname)
+	}
+
+	// Configure PTR for IPv6 addresses
+	for _, ip := range vm.IPv6 {
+		fmt.Printf("→ Configuring PTR for %s (IPv6)...\n", ip.Address)
+
+		if ip.PTR == mailHostname {
+			fmt.Printf("  ℹ PTR already configured: %s → %s\n", ip.Address, mailHostname)
+			continue
+		}
+
+		if err := h.CreatePTRRecord(vm.ID, ip.ID, mailHostname); err != nil {
+			fmt.Printf("  ⚠ Warning: Failed to set PTR for %s: %v\n", ip.Address, err)
+			continue
+		}
+
+		fmt.Printf("  ✓ PTR record set: %s → %s\n", ip.Address, mailHostname)
 	}
 
 	return nil
@@ -784,4 +864,94 @@ func ConfigurePTR(providerName, apiToken, serverIP, domain string) error {
 		fmt.Printf("    → Set PTR for IPv6 to: %s\n", mailHostname)
 		return nil
 	}
+}
+
+// AddDKIMRecord adds a DKIM DNS record for a domain
+func AddDKIMRecord(providerName, apiToken, domain, dkimPublicKey string) error {
+	if providerName == "" || apiToken == "" || dkimPublicKey == "" {
+		return nil
+	}
+
+	providerName = strings.ToLower(strings.TrimSpace(providerName))
+
+	fmt.Printf("\n🔐 Adding DKIM record for %s...\n", domain)
+
+	switch providerName {
+	case "hostinger":
+		provider := NewHostingerProvider(apiToken)
+
+		// Check if DKIM record already exists
+		existingRecords, err := provider.getRecords(domain)
+		if err != nil {
+			fmt.Printf("  ⚠ Warning: Could not fetch existing records: %v\n", err)
+		} else {
+			for _, r := range existingRecords {
+				if r.Type == "TXT" && r.Name == "default._domainkey" {
+					fmt.Printf("  ℹ DKIM record already exists for %s\n", domain)
+					return nil
+				}
+			}
+		}
+
+		// Create DKIM record
+		dkimRecord := HostingerRecord{
+			Type:    "TXT",
+			Name:    "default._domainkey",
+			Content: fmt.Sprintf("v=DKIM1; h=sha256; k=rsa; p=%s", dkimPublicKey),
+			TTL:     14400,
+		}
+
+		if err := provider.updateRecords(domain, []HostingerRecord{dkimRecord}); err != nil {
+			return fmt.Errorf("failed to create DKIM record: %w", err)
+		}
+
+		fmt.Printf("  ✓ DKIM record created: default._domainkey.%s\n", domain)
+		return nil
+
+	default:
+		fmt.Printf("  ⚠ DKIM record creation not supported for provider: %s\n", providerName)
+		fmt.Printf("  Please add the following DKIM record manually:\n")
+		fmt.Printf("    Name: default._domainkey.%s\n", domain)
+		fmt.Printf("    Type: TXT\n")
+		fmt.Printf("    Content: v=DKIM1; h=sha256; k=rsa; p=%s\n", dkimPublicKey)
+		return nil
+	}
+}
+
+// ReadDKIMPublicKey reads the DKIM public key from the OpenDKIM key file
+func ReadDKIMPublicKey(domain string) (string, error) {
+	keyFile := fmt.Sprintf("/etc/opendkim/keys/%s/default.txt", domain)
+
+	content, err := os.ReadFile(keyFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to read DKIM key file: %w", err)
+	}
+
+	// Parse the DKIM public key from the file
+	// The file format is: default._domainkey IN TXT ( "v=DKIM1; h=sha256; k=rsa; " "p=MIIB..." )
+	contentStr := string(content)
+
+	// Extract the public key value (everything after "p=")
+	startIdx := strings.Index(contentStr, "p=")
+	if startIdx == -1 {
+		return "", fmt.Errorf("could not find public key in DKIM file")
+	}
+
+	// Get everything after "p="
+	keyPart := contentStr[startIdx+2:]
+
+	// Remove quotes, parentheses, whitespace, and newlines
+	keyPart = strings.ReplaceAll(keyPart, "\"", "")
+	keyPart = strings.ReplaceAll(keyPart, "(", "")
+	keyPart = strings.ReplaceAll(keyPart, ")", "")
+	keyPart = strings.ReplaceAll(keyPart, " ", "")
+	keyPart = strings.ReplaceAll(keyPart, "\n", "")
+	keyPart = strings.ReplaceAll(keyPart, "\t", "")
+
+	// Remove any trailing content after the key (like semicolon or anything else)
+	if idx := strings.Index(keyPart, ";"); idx != -1 {
+		keyPart = keyPart[:idx]
+	}
+
+	return strings.TrimSpace(keyPart), nil
 }

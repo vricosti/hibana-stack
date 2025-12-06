@@ -80,13 +80,14 @@
     create_home: no
     state: present
 
-- name: Create mail directory structure
+- name: Create mail directory structure for all domains
   file:
-    path: /var/mail/vhosts/{{ primary_domain }}
+    path: /var/mail/vhosts/{{ item.name }}
     state: directory
     owner: vmail
     group: vmail
     mode: '0770'
+  loop: "{{ domains }}"
 
 - name: Configure Postfix main.cf
   template:
@@ -150,13 +151,12 @@
 
 - name: Create mailbox directories for email accounts
   file:
-    path: /var/mail/vhosts/{{ primary_domain }}/{{ item.username }}
+    path: /var/mail/vhosts/{{ item.0.name }}/{{ item.1.username }}
     state: directory
     owner: vmail
     group: vmail
     mode: '0770'
-  loop: "{{ email_accounts }}"
-  when: email_accounts is defined
+  loop: "{{ domains | subelements('email_accounts') }}"
 
 - name: Read hibana database password
   slurp:
@@ -175,20 +175,19 @@
     login_host: localhost
     query: |
       WITH domain_cte AS (
-        SELECT id FROM domains WHERE name = '{{ primary_domain }}'
+        SELECT id FROM domains WHERE name = '{{ item.0.name }}'
       )
       INSERT INTO email_accounts (domain_id, username, password_hash, full_name)
       VALUES (
         (SELECT id FROM domain_cte),
-        '{{ item.username }}',
-        '{{ item.password | password_hash("sha512") }}',
-        '{{ item.full_name | default("") }}'
+        '{{ item.1.username }}',
+        '{{ item.1.password | password_hash("sha512") }}',
+        '{{ item.1.full_name | default("") }}'
       )
       ON CONFLICT (domain_id, username) DO UPDATE
       SET password_hash = EXCLUDED.password_hash,
           full_name = EXCLUDED.full_name
-  loop: "{{ email_accounts }}"
-  when: email_accounts is defined
+  loop: "{{ domains | subelements('email_accounts') }}"
   become_user: postgres
   no_log: true
 

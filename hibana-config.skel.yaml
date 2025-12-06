@@ -9,20 +9,12 @@ server_ip: YOUR_SERVER_IP
 #   - manual: No automatic DNS management (you configure records manually)
 #
 # name: Provider name (required for local and external)
-#   Supported: hostinger, cloudflare, ovh
-#
-# Credentials depend on the provider:
+#   Supported: hostinger, ovh
 #
 # For Hostinger:
 #   dns_provider:
 #     type: external
 #     name: hostinger
-#     api_token: YOUR_API_TOKEN
-#
-# For Cloudflare:
-#   dns_provider:
-#     type: external
-#     name: cloudflare
 #     api_token: YOUR_API_TOKEN
 #
 # For OVH (requires 3 credentials from https://eu.api.ovh.com/createToken/):

@@ -1,4 +1,6 @@
 127.0.0.1
 localhost
-{{ primary_domain }}
-*.{{ primary_domain }}
+{% for domain in domains %}
+{{ domain.name }}
+*.{{ domain.name }}
+{% endfor %}
