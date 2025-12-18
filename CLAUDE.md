@@ -9,7 +9,7 @@ Hibana Stack is an open source Go utility that provides a complete solution for 
 ### Phase 1: Initial Setup (Go CLI)
 The CLI utility configures the server with:
 - Primary domain name (maindomain.com)
-- PowerDNS for DNS management
+- DNS management: Provider-managed (default) or self-hosted PowerDNS
 - Mail server with DMARC and DKIM
 - Traefik as reverse proxy to handle multiple domains
 - Web administration interface served via Docker (adm.maindomain.com)
@@ -28,7 +28,7 @@ A web interface accessible via adm.maindomain.com allowing to:
 
 ### Backend
 - **Go**: CLI utility and backend API
-- **PowerDNS**: Authoritative DNS server
+- **DNS**: Provider-managed (default) or PowerDNS (self-hosted authoritative DNS server)
 - **Traefik**: Reverse proxy and automatic SSL certificate management
 - **Mail server**: Complete setup with DMARC/DKIM
 
@@ -77,7 +77,7 @@ hibana-stack/
 
 1. Run CLI on a fresh Ubuntu server
 2. Configure primary domain
-3. Install and configure PowerDNS
+3. Configure DNS (provider-managed by default, or install PowerDNS if self-hosted)
 4. Install and configure mail server (DMARC, DKIM)
 5. Install and configure Traefik
 6. Deploy web administration interface

@@ -1,8 +1,9 @@
 ---
 # ============================================================================
 # /srv/ Microservices Architecture - Domain-based Organization
-# Structure: /srv/<domain>/<service>/ (e.g., /srv/primarydomain.com/api/)
+# Structure: /srv/<domain-tld>/<service>/ (e.g., /srv/primarydomain-com/api/)
 # Each service is isolated in its own directory with dedicated compose file
+# Domain path format: dots replaced with hyphens (linkedingue.com -> linkedingue-com)
 # ============================================================================
 
 # Build helper facts to check which services are enabled
@@ -13,6 +14,19 @@
 - name: Build list of enabled roles
   set_fact:
     enabled_roles: "{{ subdomains | default([]) | map(attribute='role') | list }}"
+
+- name: Set domain path variable
+  set_fact:
+    domain_path: "/srv/{{ primary_domain | replace('.', '-') }}"
+    domain_username: "{{ primary_domain | replace('.', '-') }}"
+
+- name: Create domain root directory with proper ownership
+  file:
+    path: "{{ domain_path }}"
+    state: directory
+    owner: "{{ domain_username if domain_user is defined else 'root' }}"
+    group: "{{ 'hibana-domains' if domain_user is defined else 'root' }}"
+    mode: '0755'
 
 - name: Create Traefik network
   docker_network:
@@ -93,7 +107,7 @@
   block:
     - name: Create www service directories
       file:
-        path: "/srv/{{ primary_domain }}/www/{{ item }}"
+        path: "{{ domain_path }}/www/{{ item }}"
         state: directory
         mode: '0755'
       loop:
@@ -105,7 +119,7 @@
     - name: Copy www Dockerfile
       copy:
         src: www-Dockerfile
-        dest: "/srv/{{ primary_domain }}/www/src/Dockerfile"
+        dest: "{{ domain_path }}/www/src/Dockerfile"
         owner: root
         group: root
         mode: '0644'
@@ -113,7 +127,7 @@
     - name: Create www index.html
       template:
         src: www-index.html.j2
-        dest: "/srv/{{ primary_domain }}/www/src/index.html"
+        dest: "{{ domain_path }}/www/src/index.html"
         owner: root
         group: root
         mode: '0644'
@@ -121,7 +135,7 @@
     - name: Create www nginx configuration
       template:
         src: www-nginx.conf.j2
-        dest: "/srv/{{ primary_domain }}/www/nginx/default.conf"
+        dest: "{{ domain_path }}/www/nginx/default.conf"
         owner: root
         group: root
         mode: '0644'
@@ -129,20 +143,20 @@
     - name: Create www docker-compose
       template:
         src: www-docker-compose.yml.j2
-        dest: "/srv/{{ primary_domain }}/www/docker-compose.yml"
+        dest: "{{ domain_path }}/www/docker-compose.yml"
         owner: root
         group: root
         mode: '0644'
 
     - name: Stop www service (cleanup)
       docker_compose:
-        project_src: "/srv/{{ primary_domain }}/www"
+        project_src: "{{ domain_path }}/www"
         state: absent
       ignore_errors: yes
 
     - name: Start www service
       docker_compose:
-        project_src: "/srv/{{ primary_domain }}/www"
+        project_src: "{{ domain_path }}/www"
         build: yes
         state: present
       register: www_result
@@ -161,7 +175,7 @@
   block:
     - name: Create webmail service directories
       file:
-        path: "/srv/{{ primary_domain }}/webmail/{{ item }}"
+        path: "{{ domain_path }}/webmail/{{ item }}"
         state: directory
         mode: '0755'
       loop:
@@ -172,7 +186,7 @@
     - name: Create webmail .env file
       template:
         src: webmail-env.j2
-        dest: "/srv/{{ primary_domain }}/webmail/.env"
+        dest: "{{ domain_path }}/webmail/.env"
         owner: root
         group: root
         mode: '0644'
@@ -180,20 +194,20 @@
     - name: Create webmail docker-compose
       template:
         src: webmail-docker-compose.yml.j2
-        dest: "/srv/{{ primary_domain }}/webmail/docker-compose.yml"
+        dest: "{{ domain_path }}/webmail/docker-compose.yml"
         owner: root
         group: root
         mode: '0644'
 
     - name: Stop webmail service (cleanup)
       docker_compose:
-        project_src: "/srv/{{ primary_domain }}/webmail"
+        project_src: "{{ domain_path }}/webmail"
         state: absent
       ignore_errors: yes
 
     - name: Start webmail service
       docker_compose:
-        project_src: "/srv/{{ primary_domain }}/webmail"
+        project_src: "{{ domain_path }}/webmail"
         state: present
       register: webmail_result
 
@@ -208,7 +222,7 @@
 
 - name: Create adm service directories
   file:
-    path: "/srv/{{ primary_domain }}/adm/{{ item }}"
+    path: "{{ domain_path }}/adm/{{ item }}"
     state: directory
     mode: '0755'
   loop:
@@ -234,7 +248,7 @@
     - name: Copy pre-built API binary
       copy:
         src: "{{ playbook_dir }}/api-build/hibana-api"
-        dest: "/srv/{{ primary_domain }}/adm/app/hibana-api"
+        dest: "{{ domain_path }}/adm/app/hibana-api"
         owner: root
         group: root
         mode: '0755'
@@ -242,14 +256,14 @@
     - name: Copy pre-built frontend
       synchronize:
         src: "{{ playbook_dir }}/api-build/web/"
-        dest: "/srv/{{ primary_domain }}/adm/app/web/"
+        dest: "{{ domain_path }}/adm/app/web/"
         delete: yes
       delegate_to: localhost
 
     - name: Copy pre-built Dockerfile
       copy:
         src: "{{ playbook_dir }}/api-build/Dockerfile"
-        dest: "/srv/{{ primary_domain }}/adm/app/Dockerfile"
+        dest: "{{ domain_path }}/adm/app/Dockerfile"
         owner: root
         group: root
         mode: '0644'
@@ -260,7 +274,7 @@
     - name: Create placeholder API files
       template:
         src: "api-{{ item }}.j2"
-        dest: "/srv/{{ primary_domain }}/adm/app/{{ item }}"
+        dest: "{{ domain_path }}/adm/app/{{ item }}"
         owner: root
         group: root
         mode: '0644'
@@ -272,7 +286,7 @@
 - name: Create adm .env file
   template:
     src: api-env.j2
-    dest: "/srv/{{ primary_domain }}/adm/.env"
+    dest: "{{ domain_path }}/adm/.env"
     owner: root
     group: root
     mode: '0644'
@@ -280,14 +294,14 @@
 - name: Create adm docker-compose
   template:
     src: api-docker-compose.yml.j2
-    dest: "/srv/{{ primary_domain }}/adm/docker-compose.yml"
+    dest: "{{ domain_path }}/adm/docker-compose.yml"
     owner: root
     group: root
     mode: '0644'
 
 - name: Check if JWT secret exists
   stat:
-    path: "/srv/{{ primary_domain }}/adm/secrets/jwt_secret"
+    path: "{{ domain_path }}/adm/secrets/jwt_secret"
   register: jwt_secret_file
 
 - name: Generate JWT secret if not exists
@@ -298,7 +312,7 @@
 - name: Save JWT secret
   copy:
     content: "{{ jwt_secret.stdout }}"
-    dest: "/srv/{{ primary_domain }}/adm/secrets/jwt_secret"
+    dest: "{{ domain_path }}/adm/secrets/jwt_secret"
     owner: root
     group: root
     mode: '0600'
@@ -312,7 +326,7 @@
 - name: Create database password secret
   copy:
     content: "{{ hibana_db_password_file.content | b64decode }}"
-    dest: "/srv/{{ primary_domain }}/adm/secrets/db_password"
+    dest: "{{ domain_path }}/adm/secrets/db_password"
     owner: root
     group: root
     mode: '0600'
@@ -325,26 +339,26 @@
 - name: Create pdns password secret
   copy:
     content: "{{ pdns_db_password_file.content | b64decode }}"
-    dest: "/srv/{{ primary_domain }}/adm/secrets/pdns_password"
+    dest: "{{ domain_path }}/adm/secrets/pdns_password"
     owner: root
     group: root
     mode: '0600'
 
 - name: Stop legacy api service (cleanup)
   docker_compose:
-    project_src: "/srv/{{ primary_domain }}/api"
+    project_src: "{{ domain_path }}/api"
     state: absent
   ignore_errors: yes
 
 - name: Stop adm service (cleanup)
   docker_compose:
-    project_src: "/srv/{{ primary_domain }}/adm"
+    project_src: "{{ domain_path }}/adm"
     state: absent
   ignore_errors: yes
 
 - name: Start adm service
   docker_compose:
-    project_src: "/srv/{{ primary_domain }}/adm"
+    project_src: "{{ domain_path }}/adm"
     build: yes
     state: present
   register: adm_result

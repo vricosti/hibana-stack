@@ -17,6 +17,7 @@ import (
 	"syscall"
 
 	"github.com/vricosti/hibana-stack/internal/api/models"
+	"github.com/vricosti/hibana-stack/internal/utils"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -50,7 +51,8 @@ func (s *SSHKeyService) ListKeys(domainName string) ([]models.SSHKey, error) {
 	}
 
 	// Read authorized_keys file
-	authorizedKeysPath := filepath.Join("/srv", domainName, ".ssh", "authorized_keys")
+	domainPath := utils.DomainToPath(domainName)
+	authorizedKeysPath := filepath.Join(domainPath, ".ssh", "authorized_keys")
 	content, err := os.ReadFile(authorizedKeysPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -138,7 +140,8 @@ func (s *SSHKeyService) AddKey(domainName, publicKey, label string) error {
 	}
 
 	// Check if key already exists
-	authorizedKeysPath := filepath.Join("/srv", domainName, ".ssh", "authorized_keys")
+	domainPath := utils.DomainToPath(domainName)
+	authorizedKeysPath := filepath.Join(domainPath, ".ssh", "authorized_keys")
 	if content, err := os.ReadFile(authorizedKeysPath); err == nil {
 		if strings.Contains(string(content), publicKey) {
 			return fmt.Errorf("SSH key already exists")
@@ -146,7 +149,7 @@ func (s *SSHKeyService) AddKey(domainName, publicKey, label string) error {
 	}
 
 	// Create .ssh directory if it doesn't exist
-	sshDir := filepath.Join("/srv", domainName, ".ssh")
+	sshDir := filepath.Join(domainPath, ".ssh")
 	if err := os.MkdirAll(sshDir, 0700); err != nil {
 		return fmt.Errorf("failed to create .ssh directory: %w", err)
 	}
@@ -201,7 +204,8 @@ func (s *SSHKeyService) RemoveKey(domainName, fingerprint string) error {
 	}
 
 	// Read authorized_keys file
-	authorizedKeysPath := filepath.Join("/srv", domainName, ".ssh", "authorized_keys")
+	domainPath := utils.DomainToPath(domainName)
+	authorizedKeysPath := filepath.Join(domainPath, ".ssh", "authorized_keys")
 	content, err := os.ReadFile(authorizedKeysPath)
 	if err != nil {
 		return fmt.Errorf("failed to read authorized_keys: %w", err)
@@ -248,7 +252,7 @@ func (s *SSHKeyService) RemoveKey(domainName, fingerprint string) error {
 	}
 
 	// Set ownership
-	sshDir := filepath.Join("/srv", domainName, ".ssh")
+	sshDir := filepath.Join(domainPath, ".ssh")
 	if err := setSSHOwnership(username, sshDir); err != nil {
 		return fmt.Errorf("failed to set ownership: %w", err)
 	}

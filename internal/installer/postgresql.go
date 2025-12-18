@@ -181,6 +181,15 @@ CREATE TABLE IF NOT EXISTS email_accounts (
     UNIQUE(domain_id, username)
 );
 
+CREATE TABLE IF NOT EXISTS email_aliases (
+    id SERIAL PRIMARY KEY,
+    domain_id INTEGER REFERENCES domains(id) ON DELETE CASCADE,
+    source_address VARCHAR(255) NOT NULL,
+    destination VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(domain_id, source_address)
+);
+
 CREATE TABLE IF NOT EXISTS dkim_keys (
     id SERIAL PRIMARY KEY,
     domain_id INTEGER REFERENCES domains(id) ON DELETE CASCADE,

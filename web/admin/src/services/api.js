@@ -29,7 +29,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      // Don't redirect if already on login page to avoid infinite loop
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -67,6 +70,15 @@ export const emailAPI = {
   delete: (id) => api.delete(`/emails/${id}`)
 };
 
+// Alias API (email redirections)
+export const aliasAPI = {
+  getByDomain: (domainId) => api.get(`/domains/${domainId}/aliases`),
+  getById: (id) => api.get(`/aliases/${id}`),
+  create: (domainId, data) => api.post(`/domains/${domainId}/aliases`, data),
+  update: (id, data) => api.put(`/aliases/${id}`, data),
+  delete: (id) => api.delete(`/aliases/${id}`)
+};
+
 // DNS API
 export const dnsAPI = {
   getByDomain: (domainId) => api.get(`/domains/${domainId}/dns`),
@@ -82,6 +94,47 @@ export const sshKeyAPI = {
   add: (domainName, data) => api.post(`/domains/${domainName}/ssh-keys`, data),
   remove: (domainName, fingerprint) => api.delete(`/domains/${domainName}/ssh-keys/${encodeURIComponent(fingerprint)}`),
   generate: () => api.post('/ssh-keys/generate').then(res => res.data.data)
+};
+
+// Service API (Docker management)
+export const serviceAPI = {
+  list: (domainName) => api.get(`/domains/${domainName}/services`).then(res => res.data.data),
+
+  start: (domainName, serviceName) =>
+    api.post(`/domains/${domainName}/services/${serviceName}/start`),
+
+  stop: (domainName, serviceName) =>
+    api.post(`/domains/${domainName}/services/${serviceName}/stop`),
+
+  restart: (domainName, serviceName) =>
+    api.post(`/domains/${domainName}/services/${serviceName}/restart`),
+
+  getLogs: (domainName, serviceName, lines = 100) =>
+    api.get(`/domains/${domainName}/services/${serviceName}/logs`, { params: { lines } })
+      .then(res => res.data.data?.logs || ''),
+
+  deploy: async (domainName, serviceName, data) => {
+    if (data.source === 'upload' && data.file) {
+      // Use FormData for file uploads
+      const formData = new FormData();
+      formData.append('source', 'upload');
+      formData.append('file', data.file);
+
+      const response = await api.post(
+        `/domains/${domainName}/services/${serviceName}/deploy`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return response.data.data;
+    } else {
+      // JSON for git deployment
+      const response = await api.post(
+        `/domains/${domainName}/services/${serviceName}/deploy`,
+        data
+      );
+      return response.data.data;
+    }
+  }
 };
 
 export default api;

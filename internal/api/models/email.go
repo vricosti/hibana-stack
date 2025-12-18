@@ -31,3 +31,30 @@ type EmailAccountWithDomain struct {
 	DomainName string `json:"domain_name"`
 	Email      string `json:"email"` // username@domain
 }
+
+// EmailAlias represents an email redirect/alias
+type EmailAlias struct {
+	ID            int       `json:"id"`
+	DomainID      int       `json:"domain_id"`
+	SourceAddress string    `json:"source_address"`
+	Destination   string    `json:"destination"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// EmailAliasCreate represents the data needed to create a new email alias
+type EmailAliasCreate struct {
+	SourceAddress string `json:"source_address" validate:"required"`
+	Destination   string `json:"destination" validate:"required,email"`
+}
+
+// EmailAliasUpdate represents the data that can be updated for an email alias
+type EmailAliasUpdate struct {
+	Destination string `json:"destination" validate:"required,email"`
+}
+
+// EmailAliasWithDomain includes domain information
+type EmailAliasWithDomain struct {
+	EmailAlias
+	DomainName  string `json:"domain_name"`
+	FullAddress string `json:"full_address"` // source@domain
+}

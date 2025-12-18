@@ -1,31 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { sshKeyAPI, domainAPI } from '../services/api';
+import { useDomain } from '../context/DomainContext';
+import { sshKeyAPI } from '../services/api';
 import SSHKeyModal from '../components/SSHKeyModal';
 
 export default function SSHKeys() {
-  const { domain } = useParams();
-  const navigate = useNavigate();
+  const { currentDomain } = useDomain();
   const [keys, setKeys] = useState([]);
-  const [domainInfo, setDomainInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    loadData();
-  }, [domain]);
+    if (currentDomain) {
+      loadKeys();
+    }
+  }, [currentDomain]);
 
-  const loadData = async () => {
+  const loadKeys = async () => {
+    if (!currentDomain) return;
+
     try {
       setLoading(true);
-      // Load domain info
-      const domains = await domainAPI.list();
-      const foundDomain = domains.find(d => d.name === domain);
-      setDomainInfo(foundDomain);
-
-      // Load SSH keys
-      const keysData = await sshKeyAPI.list(domain);
+      const keysData = await sshKeyAPI.list(currentDomain.name);
       setKeys(keysData.keys || []);
       setError('');
     } catch (err) {
@@ -41,8 +37,8 @@ export default function SSHKeys() {
     }
 
     try {
-      await sshKeyAPI.remove(domain, fingerprint);
-      await loadData();
+      await sshKeyAPI.remove(currentDomain.name, fingerprint);
+      await loadKeys();
     } catch (err) {
       alert('Failed to remove SSH key: ' + (err.response?.data?.error || err.message));
     }
@@ -51,7 +47,7 @@ export default function SSHKeys() {
   const handleModalClose = (reload) => {
     setShowAddModal(false);
     if (reload) {
-      loadData();
+      loadKeys();
     }
   };
 
@@ -63,46 +59,41 @@ export default function SSHKeys() {
     });
   };
 
-  if (loading) {
+  if (!currentDomain) {
     return (
-      <div className="page-container">
-        <div className="loading">Loading SSH keys...</div>
+      <div className="empty-state">
+        <p>Please select a domain to view SSH keys</p>
       </div>
     );
   }
 
+  if (loading) {
+    return <div className="loading"><div className="spinner"></div></div>;
+  }
+
   return (
-    <div className="page-container">
+    <div>
       <div className="page-header">
-        <div>
-          <button className="btn btn-secondary btn-sm" onClick={() => navigate('/domains')}>
-            ← Back to Domains
-          </button>
-          <h1>SSH Keys for {domain}</h1>
-          {domainInfo && domainInfo.username && (
-            <p className="text-muted">
-              Domain user: <code>{domainInfo.username}</code> |
-              Home: <code>/srv/{domain}/</code>
-            </p>
-          )}
-        </div>
+        <h2>SSH Keys</h2>
         <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-          + Add SSH Key
+          Add SSH Key
         </button>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {!domainInfo?.username && (
-        <div className="alert alert-warning">
+      {!currentDomain.username && (
+        <div className="alert" style={{ background: '#fff3cd', color: '#856404', border: '1px solid #ffeeba' }}>
           <strong>No domain user configured.</strong>
-          <p>This domain doesn't have a domain user. SSH key management is only available for domains with domain users.</p>
+          <p style={{ marginTop: '5px', marginBottom: 0 }}>
+            This domain doesn't have a domain user. SSH key management is only available for domains with domain users.
+          </p>
         </div>
       )}
 
       {keys.length === 0 ? (
         <div className="empty-state">
-          <p>No SSH keys configured for this domain.</p>
+          <p>No SSH keys configured for {currentDomain.name}.</p>
           <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
             Add Your First SSH Key
           </button>
@@ -128,15 +119,17 @@ export default function SSHKeys() {
                   <td>
                     <code style={{ fontSize: '0.85em' }}>{key.fingerprint}</code>
                   </td>
-                  <td className="dns-content" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <code>{key.public_key.substring(0, 60)}...</code>
-                    <button
-                      className="btn btn-sm btn-secondary"
-                      onClick={() => copyToClipboard(key.public_key)}
-                      title="Copy full key"
-                    >
-                      📋
-                    </button>
+                  <td className="dns-content">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <code>{key.public_key.substring(0, 60)}...</code>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => copyToClipboard(key.public_key)}
+                        title="Copy full key"
+                      >
+                        Copy
+                      </button>
+                    </div>
                   </td>
                   <td>
                     {key.created_at ? new Date(key.created_at).toLocaleDateString() : 'N/A'}
@@ -158,27 +151,49 @@ export default function SSHKeys() {
         </div>
       )}
 
-      <div className="card" style={{marginTop: '2rem'}}>
-        <h3>How to Connect via SSH</h3>
-        {domainInfo?.username ? (
+      <div className="card" style={{ marginTop: '2rem' }}>
+        <h3 style={{ marginBottom: '15px' }}>How to Connect via SSH</h3>
+        {currentDomain.username ? (
           <div>
             <p>Once you've added your SSH public key, you can connect to the server:</p>
-            <pre><code>ssh {domainInfo.username}@{domainInfo.server_ip || 'YOUR_SERVER_IP'}</code></pre>
-            <p className="text-muted">
-              You'll have access to <code>/srv/{domain}/</code> where you can deploy your applications.
+            <pre style={{
+              background: '#f5f5f5',
+              padding: '15px',
+              borderRadius: '5px',
+              overflow: 'auto'
+            }}>
+              <code>ssh {currentDomain.username}@{currentDomain.server_ip || 'YOUR_SERVER_IP'}</code>
+            </pre>
+            <p style={{ color: '#666', fontSize: '0.9em', marginTop: '10px' }}>
+              You'll have access to <code>/srv/{currentDomain.name.replace(/\./g, '-')}/</code> where you can deploy your applications.
             </p>
-            <h4>Upload files with SCP or rsync:</h4>
-            <pre><code>scp -r dist/* {domainInfo.username}@{domainInfo.server_ip || 'SERVER_IP'}:/srv/{domain}/www/src/</code></pre>
-            <pre><code>rsync -avz --delete dist/ {domainInfo.username}@{domainInfo.server_ip || 'SERVER_IP'}:/srv/{domain}/www/src/</code></pre>
+            <h4 style={{ marginTop: '20px', marginBottom: '10px' }}>Upload files with SCP or rsync:</h4>
+            <pre style={{
+              background: '#f5f5f5',
+              padding: '15px',
+              borderRadius: '5px',
+              overflow: 'auto',
+              marginBottom: '10px'
+            }}>
+              <code>scp -r dist/* {currentDomain.username}@{currentDomain.server_ip || 'SERVER_IP'}:/srv/{currentDomain.name.replace(/\./g, '-')}/www/src/</code>
+            </pre>
+            <pre style={{
+              background: '#f5f5f5',
+              padding: '15px',
+              borderRadius: '5px',
+              overflow: 'auto'
+            }}>
+              <code>rsync -avz --delete dist/ {currentDomain.username}@{currentDomain.server_ip || 'SERVER_IP'}:/srv/{currentDomain.name.replace(/\./g, '-')}/www/src/</code>
+            </pre>
           </div>
         ) : (
-          <p className="text-muted">Configure a domain user to enable SSH access.</p>
+          <p style={{ color: '#666' }}>Configure a domain user to enable SSH access.</p>
         )}
       </div>
 
       {showAddModal && (
         <SSHKeyModal
-          domainName={domain}
+          domainName={currentDomain.name}
           onClose={handleModalClose}
         />
       )}

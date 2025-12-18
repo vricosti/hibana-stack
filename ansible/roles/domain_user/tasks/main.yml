@@ -1,6 +1,7 @@
 ---
-# Create domain user for managing /srv/domain.com/
-# Username format: domain_com (dots replaced with underscores)
+# Create domain user for managing /srv/domain-tld/
+# Username format: domain-tld (dots replaced with hyphens)
+# Example: linkedingue.com -> user: linkedingue-com, home: /srv/linkedingue-com
 
 - name: Read hibana database password from file
   slurp:
@@ -11,9 +12,10 @@
   set_fact:
     hibana_db_password: "{{ hibana_password_file['content'] | b64decode | trim }}"
 
-- name: Set domain username
+- name: Set domain username and path
   set_fact:
-    domain_username: "{{ primary_domain | replace('.', '_') }}"
+    domain_username: "{{ primary_domain | replace('.', '-') }}"
+    domain_path: "/srv/{{ primary_domain | replace('.', '-') }}"
 
 - name: Ensure hibana-domains group exists
   group:
@@ -25,7 +27,7 @@
     name: "{{ domain_username }}"
     comment: "Domain user for {{ primary_domain }}"
     shell: /bin/bash
-    home: "/srv/{{ primary_domain }}"
+    home: "{{ domain_path }}"
     create_home: no
     group: hibana-domains
     groups: docker
@@ -41,7 +43,7 @@
 
 - name: Ensure domain directory exists
   file:
-    path: "/srv/{{ primary_domain }}"
+    path: "{{ domain_path }}"
     state: directory
     owner: "{{ domain_username }}"
     group: hibana-domains
@@ -49,7 +51,7 @@
 
 - name: Create .ssh directory for domain user
   file:
-    path: "/srv/{{ primary_domain }}/.ssh"
+    path: "{{ domain_path }}/.ssh"
     state: directory
     owner: "{{ domain_username }}"
     group: hibana-domains
@@ -57,7 +59,7 @@
 
 - name: Generate SSH key pair (auto mode)
   openssh_keypair:
-    path: "/srv/{{ primary_domain }}/.ssh/id_ed25519"
+    path: "{{ domain_path }}/.ssh/id_ed25519"
     type: ed25519
     owner: "{{ domain_username }}"
     group: hibana-domains
@@ -70,7 +72,7 @@
   authorized_key:
     user: "{{ domain_username }}"
     key: "{{ ssh_keypair.public_key }}"
-    path: "/srv/{{ primary_domain }}/.ssh/authorized_keys"
+    path: "{{ domain_path }}/.ssh/authorized_keys"
     state: present
   when: ssh_keypair.public_key is defined
 
@@ -78,7 +80,7 @@
   authorized_key:
     user: "{{ domain_username }}"
     key: "{{ domain_user.ssh_public_key }}"
-    path: "/srv/{{ primary_domain }}/.ssh/authorized_keys"
+    path: "{{ domain_path }}/.ssh/authorized_keys"
     state: present
   when: domain_user.ssh_public_key is defined and domain_user.ssh_public_key != ""
 
@@ -87,11 +89,11 @@
     dest: "/etc/sudoers.d/hibana-{{ domain_username }}"
     content: |
       # Allow {{ domain_username }} to manage docker containers for {{ primary_domain }}
-      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f /srv/{{ primary_domain }}/* up -d --build
-      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f /srv/{{ primary_domain }}/* down
-      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f /srv/{{ primary_domain }}/* restart
-      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f /srv/{{ primary_domain }}/* logs *
-      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker logs *{{ primary_domain | replace('.', '-') }}*
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f {{ domain_path }}/* up -d --build
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f {{ domain_path }}/* down
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f {{ domain_path }}/* restart
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f {{ domain_path }}/* logs *
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker logs *{{ domain_username }}*
     owner: root
     group: root
     mode: '0440'

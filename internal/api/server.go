@@ -50,6 +50,8 @@ func (s *Server) Start() error {
 	emailService := services.NewEmailService(s.db)
 	dnsService := services.NewDNSService(s.db, s.pdnsDB)
 	sshKeyService := services.NewSSHKeyService(s.db)
+	serviceService := services.NewServiceService(s.db)
+	aliasService := services.NewAliasService(s.db, domainService)
 
 	// Create handlers
 	authHandler := handlers.NewAuthHandler(s.db, s.jwtManager, loginLimiter)
@@ -57,6 +59,8 @@ func (s *Server) Start() error {
 	emailHandler := handlers.NewEmailHandler(emailService)
 	dnsHandler := handlers.NewDNSHandler(dnsService)
 	sshKeyHandler := handlers.NewSSHKeyHandler(sshKeyService)
+	serviceHandler := handlers.NewServiceHandler(serviceService)
+	aliasHandler := handlers.NewAliasHandler(aliasService)
 
 	// Create router
 	mux := http.NewServeMux()
@@ -72,12 +76,16 @@ func (s *Server) Start() error {
 
 	// Domain routes
 	mux.Handle("/api/v1/domains", authMiddleware(http.HandlerFunc(domainHandler.HandleDomains)))
-	mux.Handle("/api/v1/domains/", authMiddleware(http.HandlerFunc(s.routeDomainRequests(domainHandler, emailHandler, dnsHandler, sshKeyHandler))))
+	mux.Handle("/api/v1/domains/", authMiddleware(http.HandlerFunc(s.routeDomainRequests(domainHandler, emailHandler, dnsHandler, sshKeyHandler, serviceHandler, aliasHandler))))
 	mux.Handle("/api/v1/stats", authMiddleware(http.HandlerFunc(domainHandler.GetStats)))
 
 	// Email routes
 	mux.Handle("/api/v1/emails", authMiddleware(http.HandlerFunc(emailHandler.ListAll)))
 	mux.Handle("/api/v1/emails/", authMiddleware(http.HandlerFunc(emailHandler.HandleEmail)))
+
+	// Alias routes
+	mux.Handle("/api/v1/aliases", authMiddleware(http.HandlerFunc(aliasHandler.ListAll)))
+	mux.Handle("/api/v1/aliases/", authMiddleware(http.HandlerFunc(aliasHandler.HandleAlias)))
 
 	// DNS routes
 	mux.Handle("/api/v1/dns/", authMiddleware(http.HandlerFunc(dnsHandler.HandleDNSRecord)))
@@ -107,15 +115,19 @@ func (s *Server) Start() error {
 }
 
 // routeDomainRequests routes requests starting with /api/v1/domains/:id
-func (s *Server) routeDomainRequests(domainHandler *handlers.DomainHandler, emailHandler *handlers.EmailHandler, dnsHandler *handlers.DNSHandler, sshKeyHandler *handlers.SSHKeyHandler) http.HandlerFunc {
+func (s *Server) routeDomainRequests(domainHandler *handlers.DomainHandler, emailHandler *handlers.EmailHandler, dnsHandler *handlers.DNSHandler, sshKeyHandler *handlers.SSHKeyHandler, serviceHandler *handlers.ServiceHandler, aliasHandler *handlers.AliasHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
 		// Route based on the path structure
-		if strings.Contains(path, "/ssh-keys") {
+		if strings.Contains(path, "/services") {
+			serviceHandler.HandleServices(w, r)
+		} else if strings.Contains(path, "/ssh-keys") {
 			sshKeyHandler.HandleDomainSSHKeys(w, r)
 		} else if strings.Contains(path, "/emails") {
 			emailHandler.HandleDomainEmails(w, r)
+		} else if strings.Contains(path, "/aliases") {
+			aliasHandler.HandleDomainAliases(w, r)
 		} else if strings.Contains(path, "/dns") {
 			dnsHandler.HandleDomainDNS(w, r)
 		} else {

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { emailAPI } from '../services/api';
 
-export default function EmailModal({ email, domains, onClose }) {
+export default function EmailModal({ email, domainId, domainName, onClose }) {
   const [formData, setFormData] = useState({
-    domain_id: email?.domain_id || (domains[0]?.id || ''),
+    domain_id: email?.domain_id || domainId,
     username: email?.username || '',
     password: '',
     full_name: email?.full_name || ''
@@ -47,27 +47,21 @@ export default function EmailModal({ email, domains, onClose }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{email ? 'Edit Email Account' : 'Add Email Account'}</h3>
-          <button className="modal-close" onClick={() => onClose(false)}>×</button>
+          <button className="modal-close" onClick={() => onClose(false)}>x</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
             {error && <div className="alert alert-error">{error}</div>}
 
             <div className="form-group">
-              <label>Domain *</label>
-              <select
+              <label>Domain</label>
+              <input
+                type="text"
                 className="form-control"
-                value={formData.domain_id}
-                onChange={(e) => setFormData({ ...formData, domain_id: e.target.value })}
-                required
-                disabled={!!email}
-              >
-                {domains.map((domain) => (
-                  <option key={domain.id} value={domain.id}>
-                    {domain.name}
-                  </option>
-                ))}
-              </select>
+                value={domainName}
+                disabled
+                style={{ background: '#f5f5f5' }}
+              />
             </div>
 
             <div className="form-group">
@@ -81,6 +75,11 @@ export default function EmailModal({ email, domains, onClose }) {
                 disabled={!!email}
                 placeholder="admin"
               />
+              {!email && (
+                <small style={{ color: '#666' }}>
+                  Full address will be: {formData.username || 'username'}@{domainName}
+                </small>
+              )}
             </div>
 
             <div className="form-group">
@@ -94,7 +93,7 @@ export default function EmailModal({ email, domains, onClose }) {
                 placeholder={email ? 'Leave empty to keep current' : ''}
                 minLength="8"
               />
-              {!email && <small style={{color: '#666'}}>Minimum 8 characters</small>}
+              {!email && <small style={{ color: '#666' }}>Minimum 8 characters</small>}
             </div>
 
             <div className="form-group">
