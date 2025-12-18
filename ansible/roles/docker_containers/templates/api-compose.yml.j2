@@ -3,7 +3,7 @@ version: '3.8'
 services:
   api:
     image: hibana-api:latest
-    container_name: hibana-api-{{ primary_domain | replace('.', '_') }}
+    container_name: hibana-api-{{ primary_domain | replace('.', '-') }}
     restart: unless-stopped
     networks:
       - traefik-network
@@ -15,10 +15,10 @@ services:
       - ./logs:/var/log/hibana
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api-{{ primary_domain | replace('.', '_') }}.rule=Host(`adm.{{ primary_domain }}`)"
-      - "traefik.http.routers.api-{{ primary_domain | replace('.', '_') }}.entrypoints=websecure"
-      - "traefik.http.routers.api-{{ primary_domain | replace('.', '_') }}.tls.certresolver=letsencrypt"
-      - "traefik.http.services.api-{{ primary_domain | replace('.', '_') }}.loadbalancer.server.port=3000"
+      - "traefik.http.routers.api-{{ primary_domain | replace('.', '-') }}.rule=Host(`adm.{{ primary_domain }}`)"
+      - "traefik.http.routers.api-{{ primary_domain | replace('.', '-') }}.entrypoints=websecure"
+      - "traefik.http.routers.api-{{ primary_domain | replace('.', '-') }}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api-{{ primary_domain | replace('.', '-') }}.loadbalancer.server.port=3000"
 
 networks:
   traefik-network:

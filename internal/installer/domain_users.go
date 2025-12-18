@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/vricosti/hibana-stack/internal/utils"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -60,7 +61,8 @@ func (i *Installer) CreateDomainUser(domainName, sshPubKey string) (*DomainUserR
 	result.PublicKey = publicKey
 
 	// Create domain directory in /srv/ first (will be the home directory)
-	domainDir := filepath.Join("/srv", domainName)
+	// Example: linkedingue.com -> /srv/linkedingue-com
+	domainDir := utils.DomainToPath(domainName)
 	if err := os.MkdirAll(domainDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create domain directory: %w", err)
 	}
@@ -185,10 +187,10 @@ func (i *Installer) setDomainDirectoryOwnership(username, domainDir string) erro
 	return nil
 }
 
-// setupDomainDirectory creates the /srv/domainname directory with proper permissions
-// This is kept for backward compatibility with existing code
+// setupDomainDirectory creates the /srv/domain-tld directory with proper permissions
+// Example: linkedingue.com -> /srv/linkedingue-com
 func (i *Installer) setupDomainDirectory(username, domainName string) error {
-	domainDir := filepath.Join("/srv", domainName)
+	domainDir := utils.DomainToPath(domainName)
 
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(domainDir, 0755); err != nil {
@@ -221,6 +223,7 @@ func (i *Installer) addUserToDockerGroup(username string) error {
 // configureDomainUserSudoers configures sudoers for limited docker commands
 func (i *Installer) configureDomainUserSudoers(username, domainName string) error {
 	sudoersFile := fmt.Sprintf("/etc/sudoers.d/hibana-domain-%s", username)
+	systemName := utils.DomainToSystemName(domainName)
 
 	// Build sudoers content with limited docker commands
 	content := fmt.Sprintf(`# Hibana domain user sudoers for %s
@@ -241,15 +244,15 @@ func (i *Installer) configureDomainUserSudoers(username, domainName string) erro
 `,
 		domainName,
 		username, username, username, username,
-		username, domainName,
-		username, domainName,
-		username, domainName,
-		username, domainName,
-		username, domainName,
-		username, domainName,
-		username, domainName,
-		username, domainName,
-		username, domainName,
+		username, systemName,
+		username, systemName,
+		username, systemName,
+		username, systemName,
+		username, systemName,
+		username, systemName,
+		username, systemName,
+		username, systemName,
+		username, systemName,
 	)
 
 	// Write sudoers file
@@ -269,20 +272,9 @@ func (i *Installer) configureDomainUserSudoers(username, domainName string) erro
 }
 
 // domainNameToUsername converts a domain name to a valid username
+// Example: linkedingue.com -> linkedingue-com
 func domainNameToUsername(domain string) string {
-	// Replace dots and hyphens with underscores
-	username := strings.ReplaceAll(domain, ".", "_")
-	username = strings.ReplaceAll(username, "-", "_")
-
-	// Ensure it's lowercase
-	username = strings.ToLower(username)
-
-	// Limit length to 32 characters (standard Linux limit)
-	if len(username) > 32 {
-		username = username[:32]
-	}
-
-	return username
+	return utils.DomainToSystemName(domain)
 }
 
 // validateSSHPublicKey validates an SSH public key format

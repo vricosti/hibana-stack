@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  admin:
+  adm:
     build:
       context: ./app
       dockerfile: Dockerfile
@@ -12,21 +12,39 @@ services:
       - DATABASE_HOST=host.docker.internal
       - DATABASE_NAME=hibana
       - DATABASE_USER=hibana
+      - DATABASE_PASSWORD_FILE=/run/secrets/db_password
+      - PDNS_PASSWORD_FILE=/run/secrets/pdns_password
+      - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - API_PORT=${API_PORT:-3000}
     volumes:
-      - ./logs:/var/log/nginx
+      - ./logs:/var/log/adm
       - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /srv:/srv
     networks:
       - traefik-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    secrets:
+      - db_password
+      - pdns_password
+      - jwt_secret
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.adm.rule=Host(`adm.{{ primary_domain }}`)"
-      - "traefik.http.routers.adm.entrypoints=websecure"
-      - "traefik.http.routers.adm.tls.certresolver=letsencrypt"
-      - "traefik.http.services.adm.loadbalancer.server.port=80"
-      - "traefik.http.routers.adm.middlewares=security-headers@file"
+      - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}.rule=Host(`adm.{{ primary_domain }}`)"
+      - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}.entrypoints=websecure"
+      - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.adm-{{ primary_domain | replace('.', '-') }}.loadbalancer.server.port=3000"
+      - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}.middlewares=security-headers@file,rate-limit@file"
 
 networks:
   traefik-network:
     external: true
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  pdns_password:
+    file: ./secrets/pdns_password
+  jwt_secret:
+    file: ./secrets/jwt_secret

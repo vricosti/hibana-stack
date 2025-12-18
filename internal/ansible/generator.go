@@ -56,7 +56,9 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 		DNSProvider     *config.DNSProviderConfig
 		Domains         []config.Domain
 		PrimaryDomain   string
-		Subdomains      []config.Subdomain // For backwards compatibility with Ansible roles
+		Subdomains      []config.Subdomain       // For backwards compatibility with Ansible roles
+		WebAdmin        *config.WebAdminConfig   // Extracted from primary domain for backwards compatibility
+		DomainUser      *config.DomainUserConfig // Extracted from primary domain for backwards compatibility
 		SystemUsers     []config.SystemUser
 		DomainRedirects []config.DomainRedirect
 	}
@@ -67,6 +69,8 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 		Domains:         cfg.Domains,
 		PrimaryDomain:   primaryDomain.Name,
 		Subdomains:      primaryDomain.Subdomains, // Extract subdomains from primary domain
+		WebAdmin:        primaryDomain.WebAdmin,   // Extract webadmin from primary domain
+		DomainUser:      primaryDomain.DomainUser, // Extract domain_user from primary domain
 		SystemUsers:     cfg.SystemUsers,
 		DomainRedirects: cfg.DomainRedirects,
 	}
@@ -107,6 +111,23 @@ subdomains:
 {{- range .Subdomains }}
   - name: {{ .Name }}
     role: {{ .Role }}
+{{- end }}
+
+{{- if .WebAdmin }}
+# Web admin credentials for primary domain (for backwards compatibility with Ansible roles)
+webadmin:
+  username: "{{ .WebAdmin.Username }}"
+  password: "{{ .WebAdmin.Password }}"
+{{- end }}
+
+{{- if .DomainUser }}
+# Domain user for primary domain (for backwards compatibility with Ansible roles)
+domain_user:
+  password: "{{ .DomainUser.Password }}"
+  ssh_key_mode: "{{ .DomainUser.SSHKeyMode }}"
+  {{- if .DomainUser.SSHPublicKey }}
+  ssh_public_key: "{{ .DomainUser.SSHPublicKey }}"
+  {{- end }}
 {{- end }}
 
 # All domains

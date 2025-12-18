@@ -116,13 +116,13 @@
     mode: '0644'
   notify: Restart Dovecot
 
-- name: Create Dovecot users file
+- name: Configure Dovecot SQL authentication
   template:
-    src: dovecot-users.j2
-    dest: /etc/dovecot/users
+    src: dovecot-sql.conf.ext.j2
+    dest: /etc/dovecot/dovecot-sql.conf.ext
     owner: root
     group: root
-    mode: '0644'
+    mode: '0600'
   notify: Restart Dovecot
 
 - name: Create Postfix virtual mailbox file

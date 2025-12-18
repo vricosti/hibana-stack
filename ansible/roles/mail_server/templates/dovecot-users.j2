@@ -1,5 +1,0 @@
-{% for domain in domains %}
-{% for account in domain.email_accounts %}
-{{ account.username }}@{{ domain.name }}:{{ account.password | password_hash('sha512') }}
-{% endfor %}
-{% endfor %}

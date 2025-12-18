@@ -1,45 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { dnsAPI, domainAPI } from '../services/api';
+import { useDomain } from '../context/DomainContext';
+import { dnsAPI } from '../services/api';
 import DNSModal from '../components/DNSModal';
 
 export default function DNS() {
+  const { currentDomain } = useDomain();
   const [dnsRecords, setDnsRecords] = useState([]);
-  const [domains, setDomains] = useState([]);
-  const [selectedDomain, setSelectedDomain] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
 
   useEffect(() => {
-    loadDomains();
-  }, []);
-
-  useEffect(() => {
-    if (selectedDomain) {
+    if (currentDomain) {
       loadDNSRecords();
     }
-  }, [selectedDomain]);
-
-  const loadDomains = async () => {
-    try {
-      const response = await domainAPI.getAll();
-      const domainList = response.data.data || [];
-      setDomains(domainList);
-      if (domainList.length > 0) {
-        setSelectedDomain(domainList[0].id);
-      }
-    } catch (err) {
-      setError('Failed to load domains');
-    }
-  };
+  }, [currentDomain]);
 
   const loadDNSRecords = async () => {
-    if (!selectedDomain) return;
+    if (!currentDomain) return;
 
     try {
       setLoading(true);
-      const response = await dnsAPI.getByDomain(selectedDomain);
+      const response = await dnsAPI.getByDomain(currentDomain.id);
       setDnsRecords(response.data.data || []);
     } catch (err) {
       setError('Failed to load DNS records');
@@ -79,10 +62,7 @@ export default function DNS() {
 
   // Format DNS name for display: show @ for domain root, otherwise just subdomain
   const formatDNSName = (name) => {
-    if (!name) return '@';
-
-    const currentDomain = domains.find(d => d.id === selectedDomain);
-    if (!currentDomain) return name;
+    if (!name || !currentDomain) return '@';
 
     // If the name is exactly the domain name, show @
     if (name === currentDomain.name || name === '@') {
@@ -98,31 +78,24 @@ export default function DNS() {
     return name;
   };
 
+  if (!currentDomain) {
+    return (
+      <div className="empty-state">
+        <p>Please select a domain to view DNS records</p>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-header">
         <h2>DNS Records</h2>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <select
-            className="form-control"
-            value={selectedDomain}
-            onChange={(e) => setSelectedDomain(e.target.value)}
-            style={{ width: '300px' }}
-          >
-            {domains.map((domain) => (
-              <option key={domain.id} value={domain.id}>
-                {domain.name}
-              </option>
-            ))}
-          </select>
-          <button
-            className="btn btn-primary"
-            onClick={handleAdd}
-            disabled={!selectedDomain}
-          >
-            Add DNS Record
-          </button>
-        </div>
+        <button
+          className="btn btn-primary"
+          onClick={handleAdd}
+        >
+          Add DNS Record
+        </button>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -171,15 +144,14 @@ export default function DNS() {
         </div>
       ) : (
         <div className="empty-state">
-          <div className="empty-state-icon">🌐</div>
-          <p>No DNS records yet. Add your first DNS record!</p>
+          <p>No DNS records for {currentDomain.name}. Add your first DNS record!</p>
         </div>
       )}
 
       {showModal && (
         <DNSModal
           record={editingRecord}
-          domainId={selectedDomain}
+          domainId={currentDomain.id}
           onClose={handleModalClose}
         />
       )}
