@@ -33,7 +33,7 @@ function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <h2>Hibana</h2>
+        <img src="/logo-hibana.png" alt="Hibana" className="sidebar-logo" />
       </div>
 
       <nav className="sidebar-nav">

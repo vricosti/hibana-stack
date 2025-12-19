@@ -29,7 +29,7 @@ export default function Login() {
   return (
     <div className="login-container">
       <div className="login-box">
-        <h1>🔥 Hibana Stack</h1>
+        <img src="/logo-hibana.png" alt="Hibana Stack" className="login-logo" />
         <h2>Administration Panel</h2>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
