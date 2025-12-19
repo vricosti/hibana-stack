@@ -387,3 +387,95 @@ func setSSHOwnership(username, sshDir string) error {
 
 	return nil
 }
+
+// AddExternalKey adds a private key for external service access (e.g., GitHub)
+func (s *SSHKeyService) AddExternalKey(domainName string, req *models.ExternalSSHKeyRequest) error {
+	// Get domain info and username
+	var username string
+	err := s.db.QueryRow(`
+		SELECT du.username
+		FROM domains d
+		LEFT JOIN domain_users du ON d.id = du.domain_id
+		WHERE d.name = $1
+	`, domainName).Scan(&username)
+
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("domain not found or no domain user configured")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get domain info: %w", err)
+	}
+
+	domainPath := utils.DomainToPath(domainName)
+	sshDir := filepath.Join(domainPath, ".ssh")
+
+	// Create .ssh directory if it doesn't exist
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		return fmt.Errorf("failed to create .ssh directory: %w", err)
+	}
+
+	// Generate a safe filename from the label
+	safeLabel := strings.ReplaceAll(req.Label, " ", "_")
+	safeLabel = strings.ReplaceAll(safeLabel, "/", "_")
+	keyFileName := fmt.Sprintf("id_%s", safeLabel)
+	keyFilePath := filepath.Join(sshDir, keyFileName)
+
+	// Write private key
+	if err := os.WriteFile(keyFilePath, []byte(req.PrivateKey), 0600); err != nil {
+		return fmt.Errorf("failed to write private key: %w", err)
+	}
+
+	// Update SSH config file
+	configPath := filepath.Join(sshDir, "config")
+	if err := s.updateSSHConfig(configPath, req, keyFileName); err != nil {
+		// Cleanup key file on config error
+		os.Remove(keyFilePath)
+		return fmt.Errorf("failed to update SSH config: %w", err)
+	}
+
+	// Set ownership
+	if err := setSSHOwnership(username, sshDir); err != nil {
+		return fmt.Errorf("failed to set ownership: %w", err)
+	}
+
+	return nil
+}
+
+// updateSSHConfig adds or updates an entry in the SSH config file
+func (s *SSHKeyService) updateSSHConfig(configPath string, req *models.ExternalSSHKeyRequest, keyFileName string) error {
+	hostname := req.Hostname
+	if hostname == "" {
+		hostname = req.Host
+	}
+
+	// Build config entry
+	entry := fmt.Sprintf(`
+# %s
+Host %s
+    HostName %s
+    User %s
+    IdentityFile ~/.ssh/%s
+    IdentitiesOnly yes
+`, req.Label, req.Host, hostname, req.User, keyFileName)
+
+	// Read existing config
+	existingConfig, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read existing config: %w", err)
+	}
+
+	// Check if host already exists in config
+	if strings.Contains(string(existingConfig), fmt.Sprintf("Host %s", req.Host)) {
+		return fmt.Errorf("SSH config entry for host %s already exists", req.Host)
+	}
+
+	// Append new entry
+	newConfig := string(existingConfig) + entry
+
+	// Write config
+	if err := os.WriteFile(configPath, []byte(newConfig), 0600); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	return nil
+}

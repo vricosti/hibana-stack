@@ -34,7 +34,7 @@ virtual_mailbox_maps = hash:/etc/postfix/vmailbox
 virtual_minimum_uid = 100
 virtual_uid_maps = static:5000
 virtual_gid_maps = static:5000
-virtual_alias_maps = hash:/etc/postfix/virtual
+virtual_alias_maps = pgsql:/etc/postfix/pgsql-virtual-alias-maps.cf
 
 # SMTP Authentication
 smtpd_sasl_type = dovecot

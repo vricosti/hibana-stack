@@ -92,6 +92,7 @@ export const dnsAPI = {
 export const sshKeyAPI = {
   list: (domainName) => api.get(`/domains/${domainName}/ssh-keys`).then(res => res.data.data),
   add: (domainName, data) => api.post(`/domains/${domainName}/ssh-keys`, data),
+  addExternal: (domainName, data) => api.post(`/domains/${domainName}/ssh-keys/external`, data),
   remove: (domainName, fingerprint) => api.delete(`/domains/${domainName}/ssh-keys/${encodeURIComponent(fingerprint)}`),
   generate: () => api.post('/ssh-keys/generate').then(res => res.data.data)
 };

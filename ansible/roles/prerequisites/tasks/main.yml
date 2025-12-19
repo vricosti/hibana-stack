@@ -36,6 +36,7 @@
       - docker.io
       - docker-compose
       - postfix
+      - postfix-pgsql
       - dovecot-core
       - dovecot-imapd
       - dovecot-pop3d

@@ -134,20 +134,17 @@
     mode: '0644'
   notify: Rebuild Postfix maps
 
-- name: Create Postfix virtual alias file
-  copy:
-    content: ""
-    dest: /etc/postfix/virtual
+- name: Configure Postfix PostgreSQL virtual alias maps
+  template:
+    src: postfix-pgsql-virtual-alias.cf.j2
+    dest: /etc/postfix/pgsql-virtual-alias-maps.cf
     owner: root
     group: root
-    mode: '0644'
-    force: no
+    mode: '0640'
+  notify: Restart Postfix
 
 - name: Build Postfix vmailbox map
   command: postmap /etc/postfix/vmailbox
-
-- name: Build Postfix virtual map
-  command: postmap /etc/postfix/virtual
 
 - name: Create mailbox directories for email accounts
   file:

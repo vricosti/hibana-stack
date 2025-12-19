@@ -24,3 +24,12 @@ type SSHKeyCreateRequest struct {
 type SSHKeyListResponse struct {
 	Keys []SSHKey `json:"keys"`
 }
+
+// ExternalSSHKeyRequest represents the request to add an external service SSH key
+type ExternalSSHKeyRequest struct {
+	PrivateKey string `json:"private_key" binding:"required"`
+	Label      string `json:"label" binding:"required"`
+	Host       string `json:"host" binding:"required"`
+	Hostname   string `json:"hostname"`
+	User       string `json:"user" binding:"required"`
+}

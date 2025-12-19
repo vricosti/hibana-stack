@@ -32,8 +32,20 @@ func (h *SSHKeyHandler) HandleDomainSSHKeys(w http.ResponseWriter, r *http.Reque
 
 	domainName := pathParts[3] // domains/:domain/ssh-keys
 
-	// Check if there's a fingerprint in the path
+	// Check if there's something after ssh-keys in the path
 	if len(pathParts) > 5 {
+		subPath := pathParts[5]
+
+		// Check for /external endpoint
+		if subPath == "external" {
+			if r.Method == http.MethodPost {
+				h.AddExternalKey(w, r, domainName)
+			} else {
+				respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+			}
+			return
+		}
+
 		// /api/v1/domains/:domain/ssh-keys/:fingerprint
 		// Join remaining parts in case fingerprint contains '/'
 		fingerprintPath := strings.Join(pathParts[5:], "/")
@@ -141,5 +153,42 @@ func (h *SSHKeyHandler) GenerateKeyPair(w http.ResponseWriter, r *http.Request) 
 			"public_key":  publicKey,
 			"private_key": privateKey,
 		},
+	})
+}
+
+// AddExternalKey adds a private key for external service access (e.g., GitHub)
+func (h *SSHKeyHandler) AddExternalKey(w http.ResponseWriter, r *http.Request, domainName string) {
+	var req models.ExternalSSHKeyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.PrivateKey == "" {
+		respondError(w, http.StatusBadRequest, "private_key is required")
+		return
+	}
+	if req.Label == "" {
+		respondError(w, http.StatusBadRequest, "label is required")
+		return
+	}
+	if req.Host == "" {
+		respondError(w, http.StatusBadRequest, "host is required")
+		return
+	}
+	if req.User == "" {
+		respondError(w, http.StatusBadRequest, "user is required")
+		return
+	}
+
+	if err := h.service.AddExternalKey(domainName, &req); err != nil {
+		log.Printf("Failed to add external SSH key for %s: %v", domainName, err)
+		respondError(w, http.StatusInternalServerError, "Failed to add external SSH key: "+err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, models.APIResponse{
+		Success: true,
+		Message: "External SSH key added successfully",
 	})
 }

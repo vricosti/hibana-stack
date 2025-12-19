@@ -69,7 +69,9 @@
       "Bash(sudo -S apt-get install:*)",
       "Bash(sudo -S sed:*)",
       "Bash(sudo -S postmap:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git config:*)",
+      "Bash(git filter-branch:*)"
     ],
     "deny": [],
     "ask": []
