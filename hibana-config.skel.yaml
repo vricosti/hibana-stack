@@ -9,7 +9,7 @@ server_ip: YOUR_SERVER_IP
 #   - manual: No automatic DNS management (you configure records manually)
 #
 # name: Provider name (required for local and external)
-#   Supported: hostinger, ovh
+#   Supported: hostinger (ovh coming soon)
 #
 # For Hostinger:
 #   dns_provider:

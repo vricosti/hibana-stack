@@ -4,7 +4,7 @@ Configure your Ubuntu server with DNS, mail, and multi-domain support in one com
 
 ## Features
 
-- DNS management: PowerDNS (self-hosted) or external providers (Hostinger, OVH, Cloudflare)
+- DNS management: PowerDNS (self-hosted) or external provider (Hostinger)
 - Mail server with DMARC, DKIM, SPF and SpamAssassin
 - Traefik reverse proxy with automatic SSL (Let's Encrypt)
 - Web admin interface at `adm.yourdomain.com`
@@ -29,7 +29,7 @@ Edit `hibana-config.yaml`:
 primary_domain: example.com
 server_ip: YOUR_SERVER_IP
 
-# DNS: "local" (PowerDNS) or "external" (Hostinger, OVH, Cloudflare)
+# DNS: "local" (PowerDNS) or "external" (Hostinger)
 dns_provider:
   type: external
   name: hostinger
