@@ -94,9 +94,6 @@ export default function SSHKeys() {
       {keys.length === 0 ? (
         <div className="empty-state">
           <p>No SSH keys configured for {currentDomain.name}.</p>
-          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-            Add Your First SSH Key
-          </button>
         </div>
       ) : (
         <div className="table-container">
