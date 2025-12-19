@@ -183,6 +183,13 @@
         - 'data'
         - 'logs'
 
+    - name: Set webmail data directory ownership for www-data
+      file:
+        path: "{{ domain_path }}/webmail/data"
+        owner: '33'
+        group: '33'
+        mode: '0755'
+
     - name: Create webmail .env file
       template:
         src: webmail-env.j2

@@ -57,11 +57,14 @@ func (h *ServiceHandler) HandleServices(w http.ResponseWriter, r *http.Request) 
 
 	// /api/v1/domains/{domain}/services
 	if serviceIdx == -1 || serviceIdx >= len(parts) {
-		if r.Method == http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
 			h.List(w, r, domainName)
-			return
+		case http.MethodPost:
+			h.Create(w, r, domainName)
+		default:
+			respondServiceError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		}
-		respondServiceError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
@@ -88,6 +91,12 @@ func (h *ServiceHandler) HandleServices(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// DELETE /api/v1/domains/{domain}/services/{serviceName}
+	if r.Method == http.MethodDelete {
+		h.Delete(w, r, domainName, serviceName)
+		return
+	}
+
 	respondServiceError(w, http.StatusNotFound, "Not found")
 }
 
@@ -102,6 +111,91 @@ func (h *ServiceHandler) List(w http.ResponseWriter, r *http.Request, domainName
 	respondServiceJSON(w, http.StatusOK, map[string]interface{}{
 		"data": services,
 	})
+}
+
+// Create creates a new subdomain service
+func (h *ServiceHandler) Create(w http.ResponseWriter, r *http.Request, domainName string) {
+	var req models.CreateSubdomainRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondServiceError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	if req.Name == "" {
+		respondServiceError(w, http.StatusBadRequest, "Subdomain name is required")
+		return
+	}
+
+	// Validate subdomain name
+	if !isValidSubdomainName(req.Name) {
+		respondServiceError(w, http.StatusBadRequest, "Invalid subdomain name. Use only lowercase letters, numbers, and hyphens.")
+		return
+	}
+
+	// Check for reserved names
+	reservedNames := []string{"www", "adm", "mail", "webmail", "api", "ns1", "ns2", "ftp", "smtp", "imap", "pop", "pop3"}
+	for _, reserved := range reservedNames {
+		if req.Name == reserved {
+			respondServiceError(w, http.StatusBadRequest, fmt.Sprintf("'%s' is a reserved subdomain name", req.Name))
+			return
+		}
+	}
+
+	subdomain, err := h.service.CreateSubdomain(domainName, req.Name)
+	if err != nil {
+		respondServiceError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondServiceJSON(w, http.StatusCreated, map[string]interface{}{
+		"data":    subdomain,
+		"message": fmt.Sprintf("Service %s created successfully", req.Name),
+	})
+}
+
+// Delete deletes a custom subdomain service
+func (h *ServiceHandler) Delete(w http.ResponseWriter, r *http.Request, domainName, serviceName string) {
+	// Check for reserved names that cannot be deleted
+	reservedNames := []string{"www", "adm", "mail", "webmail"}
+	for _, reserved := range reservedNames {
+		if serviceName == reserved {
+			respondServiceError(w, http.StatusBadRequest, fmt.Sprintf("Cannot delete system service '%s'", serviceName))
+			return
+		}
+	}
+
+	err := h.service.DeleteSubdomain(domainName, serviceName)
+	if err != nil {
+		respondServiceError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondServiceJSON(w, http.StatusOK, map[string]interface{}{
+		"message": fmt.Sprintf("Service %s deleted successfully", serviceName),
+	})
+}
+
+// isValidSubdomainName validates a subdomain name
+func isValidSubdomainName(name string) bool {
+	if len(name) == 0 || len(name) > 63 {
+		return false
+	}
+	// Must start with a letter
+	if name[0] < 'a' || name[0] > 'z' {
+		return false
+	}
+	// Must end with a letter or number
+	last := name[len(name)-1]
+	if !((last >= 'a' && last <= 'z') || (last >= '0' && last <= '9')) {
+		return false
+	}
+	// Only lowercase letters, numbers, and hyphens
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // Start starts a service
@@ -192,9 +286,9 @@ func (h *ServiceHandler) Deploy(w http.ResponseWriter, r *http.Request, domainNa
 		return
 	}
 
-	// Only www is deployable
-	if serviceName != "www" {
-		respondServiceError(w, http.StatusBadRequest, "Only www service is deployable")
+	// Check if service is deployable (www or custom website)
+	if !h.service.IsDeployable(domainName, serviceName) {
+		respondServiceError(w, http.StatusBadRequest, "This service is not deployable")
 		return
 	}
 

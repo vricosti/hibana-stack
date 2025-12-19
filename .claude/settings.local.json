@@ -71,7 +71,17 @@
       "Bash(sudo -S postmap:*)",
       "Bash(git add:*)",
       "Bash(git config:*)",
-      "Bash(git filter-branch:*)"
+      "Bash(git filter-branch:*)",
+      "Bash(go run:*)",
+      "WebFetch(domain:developers.hostinger.com)",
+      "Bash(jq:*)",
+      "Bash(\"https://developers.hostinger.com/api/dns/v1/zones/vridev.com/reset\")",
+      "Bash(\"https://developers.hostinger.com/api/domains/v1/portfolio/vridev.com/nameservers\")",
+      "Bash(dig:*)",
+      "Bash(__NEW_LINE__ echo \"\")",
+      "Bash(\"https://developers.hostinger.com/api/domains/v1/portfolio\")",
+      "Bash(./hibana init:*)",
+      "Bash(\"https://developers.hostinger.com/api/domains/v1/portfolio/vridev.com\")"
     ],
     "deny": [],
     "ask": []

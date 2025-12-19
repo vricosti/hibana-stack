@@ -220,6 +220,15 @@ CREATE TABLE IF NOT EXISTS ssh_keys (
     UNIQUE(domain_id, fingerprint)
 );
 
+CREATE TABLE IF NOT EXISTS subdomains (
+    id SERIAL PRIMARY KEY,
+    domain_id INTEGER REFERENCES domains(id) ON DELETE CASCADE,
+    name VARCHAR(63) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'website',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(domain_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS configuration (
     key VARCHAR(255) PRIMARY KEY,
     value TEXT NOT NULL,

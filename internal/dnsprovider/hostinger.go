@@ -255,6 +255,16 @@ type UpdateRequest struct {
 
 // updateRecords updates DNS records for the domain (adds new records)
 func (h *HostingerProvider) updateRecords(domain string, records []HostingerRecord) error {
+	return h.updateRecordsWithOverwrite(domain, records, false)
+}
+
+// replaceRecords replaces DNS records for the domain (overwrites existing records of same name/type)
+func (h *HostingerProvider) replaceRecords(domain string, records []HostingerRecord) error {
+	return h.updateRecordsWithOverwrite(domain, records, true)
+}
+
+// updateRecordsWithOverwrite updates DNS records with optional overwrite mode
+func (h *HostingerProvider) updateRecordsWithOverwrite(domain string, records []HostingerRecord, overwrite bool) error {
 	// Convert HostingerRecord to the API's expected format
 	zoneRecords := make([]ZoneRecord, 0, len(records))
 	for _, r := range records {
@@ -269,7 +279,7 @@ func (h *HostingerProvider) updateRecords(domain string, records []HostingerReco
 	}
 
 	updateReq := UpdateRequest{
-		Overwrite: false, // Append/update, don't replace all records
+		Overwrite: overwrite,
 		Zone:      zoneRecords,
 	}
 
@@ -277,7 +287,6 @@ func (h *HostingerProvider) updateRecords(domain string, records []HostingerReco
 	if err != nil {
 		return err
 	}
-
 
 	req, err := http.NewRequest("PUT", hostingerDNSAPIURL+"/zones/"+domain, bytes.NewBuffer(payload))
 	if err != nil {
@@ -296,6 +305,59 @@ func (h *HostingerProvider) updateRecords(domain string, records []HostingerReco
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// AddRecords adds new DNS records to a domain (public method)
+func (h *HostingerProvider) AddRecords(domain string, records []HostingerRecord) error {
+	return h.updateRecords(domain, records)
+}
+
+// DeleteRecord deletes a DNS record from a domain
+func (h *HostingerProvider) DeleteRecord(domain, name, recordType string) error {
+	// Get existing records
+	existingRecords, err := h.getRecords(domain)
+	if err != nil {
+		return fmt.Errorf("failed to get existing records: %w", err)
+	}
+
+	// Filter out the record to delete
+	var newRecords []HostingerRecord
+	found := false
+	for _, r := range existingRecords {
+		if r.Name == name && r.Type == recordType {
+			found = true
+			continue // Skip this record (delete it)
+		}
+		newRecords = append(newRecords, r)
+	}
+
+	if !found {
+		// Record doesn't exist, nothing to delete
+		return nil
+	}
+
+	// The Hostinger API doesn't have a direct delete endpoint for individual records
+	// We need to reset the zone and re-add all records except the one we want to delete
+	// First, reset the zone
+	resetURL := hostingerDNSAPIURL + "/zones/" + domain + "/reset"
+	req, err := http.NewRequest("POST", resetURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create reset request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+h.apiToken)
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to reset zone: %w", err)
+	}
+	resp.Body.Close()
+
+	// Re-add all records except the deleted one
+	if len(newRecords) > 0 {
+		return h.updateRecords(domain, newRecords)
 	}
 
 	return nil
@@ -409,6 +471,66 @@ func (h *HostingerProvider) GetNameservers(domain string) ([]string, error) {
 	return nameservers, nil
 }
 
+// Hostinger default nameservers
+const (
+	hostingerDefaultNS1 = "ns1.dns-parking.com"
+	hostingerDefaultNS2 = "ns2.dns-parking.com"
+)
+
+// ResetNameserversToDefault resets the domain's nameservers to Hostinger defaults
+// This also clears any child nameservers (glue records) that were set for local DNS
+func (h *HostingerProvider) ResetNameserversToDefault(domain string) error {
+	// First, check current nameservers
+	currentNameservers, err := h.GetNameservers(domain)
+	if err != nil {
+		fmt.Printf("  ⚠ Warning: Could not fetch current nameservers: %v\n", err)
+		// Continue anyway to try the update
+	} else {
+		// Check if nameservers are already set to Hostinger defaults
+		if len(currentNameservers) >= 2 &&
+			currentNameservers[0] == hostingerDefaultNS1 &&
+			currentNameservers[1] == hostingerDefaultNS2 {
+			fmt.Printf("  ✓ Nameservers already set to Hostinger defaults: %s, %s\n", hostingerDefaultNS1, hostingerDefaultNS2)
+			return nil
+		}
+		fmt.Printf("  Current nameservers: %v\n", currentNameservers)
+	}
+
+	// Update to Hostinger default nameservers
+	payload := map[string]string{
+		"ns1": hostingerDefaultNS1,
+		"ns2": hostingerDefaultNS2,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("PUT", hostingerDomainsAPIURL+"/portfolio/"+domain+"/nameservers", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+h.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	fmt.Printf("  ✓ Nameservers reset to Hostinger defaults: %s, %s\n", hostingerDefaultNS1, hostingerDefaultNS2)
+	fmt.Println("  ℹ Child nameservers (glue records) will be automatically cleared")
+	return nil
+}
+
 // VerifyDomainOwnership verifies that the domain is managed by the DNS provider
 func VerifyDomainOwnership(providerName, apiToken, domain string) error {
 	if providerName == "" || apiToken == "" {
@@ -509,8 +631,13 @@ func UpdateDNSRecords(providerName, providerType, apiToken string, domainCfg Dom
 				return fmt.Errorf("failed to update nameservers: %w", err)
 			}
 		} else if providerType == "external" {
-			// External DNS - only add A records for subdomains, MX, SPF, DMARC
-			fmt.Println("\n→ Configuring DNS records for external provider...")
+			// External DNS - reset nameservers to Hostinger defaults and add DNS records
+			fmt.Println("\n→ Resetting nameservers to Hostinger defaults...")
+			if err := provider.ResetNameserversToDefault(domain); err != nil {
+				fmt.Printf("  ⚠ Warning: Could not reset nameservers: %v\n", err)
+			}
+
+			fmt.Println("→ Configuring DNS records for external provider...")
 
 			// Build map of existing records for quick lookup
 			existingByNameType := make(map[string]HostingerRecord)
@@ -637,7 +764,16 @@ func UpdateDNSRecords(providerName, providerType, apiToken string, domainCfg Dom
 						name = name + "." + domain
 					}
 
-					if err := provider.updateRecords(domain, []HostingerRecord{r}); err != nil {
+					// Use replaceRecords for A records to overwrite any existing IP (e.g., parking IP)
+					// Use updateRecords for other record types to append without removing existing records
+					var err error
+					if r.Type == "A" {
+						err = provider.replaceRecords(domain, []HostingerRecord{r})
+					} else {
+						err = provider.updateRecords(domain, []HostingerRecord{r})
+					}
+
+					if err != nil {
 						fmt.Printf("    ✗ %s %s %s - %v\n", name, r.Type, r.Content, err)
 					} else {
 						fmt.Printf("    ✓ %s %s %s\n", name, r.Type, r.Content)

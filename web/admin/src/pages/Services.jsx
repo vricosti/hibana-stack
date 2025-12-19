@@ -3,6 +3,8 @@ import { useDomain } from '../context/DomainContext';
 import { serviceAPI } from '../services/api';
 import DeployModal from '../components/DeployModal';
 import LogsModal from '../components/LogsModal';
+import AddServiceModal from '../components/AddServiceModal';
+import DeleteServiceModal from '../components/DeleteServiceModal';
 
 function Services() {
   const { currentDomain } = useDomain();
@@ -14,6 +16,8 @@ function Services() {
   // Modal states
   const [deployModal, setDeployModal] = useState({ open: false, service: null });
   const [logsModal, setLogsModal] = useState({ open: false, service: null, logs: '' });
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ open: false, service: null });
 
   useEffect(() => {
     if (currentDomain) {
@@ -132,6 +136,39 @@ function Services() {
     return actionLoading[`${serviceName}-${action}`];
   };
 
+  const getServiceUrl = (service) => {
+    if (service.role === 'mailserver') return null;
+    if (service.name === 'www') {
+      return `https://www.${currentDomain.name}`;
+    }
+    return `https://${service.name}.${currentDomain.name}`;
+  };
+
+  const handleDeleteService = (service) => {
+    if (!confirm(`Are you sure you want to delete the service "${service.name}"?\n\nThis will:\n• Stop and remove the container\n• Delete all files\n• Remove the DNS record`)) {
+      return;
+    }
+    setDeleteModal({ open: true, service });
+  };
+
+  const handleDeleteModalClose = (reload) => {
+    setDeleteModal({ open: false, service: null });
+    if (reload) {
+      loadServices();
+    }
+  };
+
+  const performDelete = async () => {
+    return serviceAPI.delete(currentDomain.name, deleteModal.service.name);
+  };
+
+  const handleAddModalClose = (reload) => {
+    setShowAddModal(false);
+    if (reload) {
+      loadServices();
+    }
+  };
+
   if (!currentDomain) {
     return (
       <div className="empty-state">
@@ -148,9 +185,14 @@ function Services() {
     <div>
       <div className="page-header">
         <h2>Services</h2>
-        <button className="btn btn-secondary" onClick={loadServices}>
-          Refresh
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="btn btn-secondary" onClick={loadServices}>
+            Refresh
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+            Add Service
+          </button>
+        </div>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -170,7 +212,18 @@ function Services() {
             {services.map(service => (
               <tr key={service.name}>
                 <td>
-                  <strong>{service.name}</strong>
+                  {getServiceUrl(service) ? (
+                    <a
+                      href={getServiceUrl(service)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#007bff', textDecoration: 'none', fontWeight: 'bold' }}
+                    >
+                      {service.name}
+                    </a>
+                  ) : (
+                    <strong>{service.name}</strong>
+                  )}
                 </td>
                 <td>{service.role}</td>
                 <td>
@@ -246,6 +299,19 @@ function Services() {
                             Deploy
                           </button>
                         )}
+
+                        {service.is_custom && (
+                          <button
+                            className="btn-icon btn-icon-danger"
+                            onClick={() => handleDeleteService(service)}
+                            title="Delete service"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="3 6 5 6 21 6"/>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -279,6 +345,24 @@ function Services() {
           loading={logsModal.loading}
           onClose={() => setLogsModal({ open: false, service: null, logs: '' })}
           onRefresh={handleRefreshLogs}
+        />
+      )}
+
+      {/* Add Service Modal */}
+      {showAddModal && (
+        <AddServiceModal
+          domainName={currentDomain.name}
+          onClose={handleAddModalClose}
+        />
+      )}
+
+      {/* Delete Service Modal */}
+      {deleteModal.open && (
+        <DeleteServiceModal
+          service={deleteModal.service}
+          domainName={currentDomain.name}
+          onClose={handleDeleteModalClose}
+          onDelete={performDelete}
         />
       )}
     </div>

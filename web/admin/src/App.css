@@ -41,31 +41,41 @@ body {
   background-clip: text;
 }
 
-/* Domain Selector */
-.domain-selector {
+/* Sidebar Domain Header */
+.sidebar-domain-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px 15px;
   border-bottom: 1px solid rgba(255,255,255,0.1);
+  margin-bottom: 5px;
 }
 
-.domain-selector select {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid rgba(255,255,255,0.2);
+.sidebar-back-btn {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  cursor: pointer;
+  padding: 4px;
   border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.sidebar-back-btn:hover {
   background: rgba(255,255,255,0.1);
   color: white;
+}
+
+.sidebar-domain-name {
   font-size: 0.9em;
-  cursor: pointer;
-}
-
-.domain-selector select:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.domain-selector select option {
-  background: #1a1a2e;
-  color: white;
+  color: #667eea;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Sidebar Navigation */
@@ -154,6 +164,24 @@ body {
 
 .page-header h2 {
   font-size: 1.2em;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  margin-top: 15px;
+}
+
+.section-header h3 {
+  font-size: 1em;
+  color: #333;
+  margin: 0;
+}
+
+.text-warning {
+  color: #856404;
 }
 
 .header-buttons {
@@ -583,6 +611,14 @@ body {
   background: #f9f9f9;
 }
 
+.table tbody tr.clickable-row {
+  cursor: pointer;
+}
+
+.table tbody tr.clickable-row:hover {
+  background: #f0f4ff;
+}
+
 .table tbody tr:last-child {
   border-bottom: none;
 }
@@ -655,6 +691,137 @@ body {
 .btn-sm {
   padding: 4px 10px;
   font-size: 0.8em;
+}
+
+/* Domains Grid */
+.domains-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 15px;
+}
+
+.domain-card {
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  overflow: hidden;
+}
+
+.domain-card-header {
+  padding: 12px 15px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.domain-card-header h3 {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.75em;
+  font-weight: 600;
+}
+
+.badge-primary {
+  background: #667eea;
+  color: white;
+}
+
+.dns-provider-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #e3f2fd;
+  color: #1565c0;
+  border-radius: 10px;
+  font-size: 0.8em;
+  font-weight: 500;
+}
+
+.dns-provider-powerdns {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.dns-provider-hostinger {
+  background: #fce4ec;
+  color: #c2185b;
+}
+
+.dns-provider-cloudflare {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.dns-provider-ovh {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.domain-card-body {
+  padding: 12px 15px;
+}
+
+.domain-info {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.domain-info:last-child {
+  border-bottom: none;
+}
+
+.domain-info-label {
+  color: #666;
+  font-size: 0.85em;
+}
+
+.domain-info-value {
+  color: #333;
+  font-weight: 500;
+  font-size: 0.85em;
+}
+
+.domain-card-footer {
+  padding: 10px 15px;
+  background: #f9f9f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.domain-info-box {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
+.domain-info-box strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.9em;
+}
+
+.domain-info-box ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.85em;
+  color: #666;
+}
+
+.domain-info-box ul li {
+  margin-bottom: 3px;
 }
 
 /* Responsive */

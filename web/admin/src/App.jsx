@@ -1,8 +1,9 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, NavLink, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DomainProvider, useDomain } from './context/DomainContext';
 import Login from './pages/Login';
+import Domains from './pages/Domains';
 import Services from './pages/Services';
 import Emails from './pages/Emails';
 import DNS from './pages/DNS';
@@ -19,62 +20,55 @@ function PrivateRoute({ children }) {
   return isAuthenticated ? children : <Navigate to="/login" />;
 }
 
-function DomainSelector() {
-  const { domains, currentDomain, selectDomain, loading } = useDomain();
-
-  if (loading) {
-    return <div className="domain-selector loading">Loading...</div>;
-  }
-
-  if (domains.length === 0) {
-    return <div className="domain-selector empty">No domains</div>;
-  }
-
-  return (
-    <div className="domain-selector">
-      <select
-        value={currentDomain?.id || ''}
-        onChange={(e) => {
-          const domain = domains.find(d => d.id === parseInt(e.target.value));
-          if (domain) selectDomain(domain);
-        }}
-      >
-        {domains.map(domain => (
-          <option key={domain.id} value={domain.id}>
-            {domain.name}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 function Sidebar() {
+  const navigate = useNavigate();
+  const { currentDomain, clearDomain } = useDomain();
+
+  const handleBackToDomains = () => {
+    clearDomain();
+    navigate('/domains');
+  };
+
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
         <h2>Hibana</h2>
       </div>
 
-      <DomainSelector />
-
       <nav className="sidebar-nav">
-        <NavLink to="/services" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <span className="sidebar-icon">📦</span>
-          Services
-        </NavLink>
-        <NavLink to="/emails" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <span className="sidebar-icon">📧</span>
-          Email
-        </NavLink>
-        <NavLink to="/ssh-keys" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <span className="sidebar-icon">🔑</span>
-          SSH Keys
-        </NavLink>
-        <NavLink to="/dns" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <span className="sidebar-icon">🌐</span>
-          DNS Records
-        </NavLink>
+        {currentDomain ? (
+          <>
+            <div className="sidebar-domain-header">
+              <button className="sidebar-back-btn" onClick={handleBackToDomains} title="Back to domains">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
+              <span className="sidebar-domain-name">{currentDomain.name}</span>
+            </div>
+            <NavLink to="/services" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+              <span className="sidebar-icon">📦</span>
+              Services
+            </NavLink>
+            <NavLink to="/emails" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+              <span className="sidebar-icon">📧</span>
+              Email
+            </NavLink>
+            <NavLink to="/ssh-keys" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+              <span className="sidebar-icon">🔑</span>
+              SSH Keys
+            </NavLink>
+            <NavLink to="/dns" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+              <span className="sidebar-icon">🌐</span>
+              DNS Records
+            </NavLink>
+          </>
+        ) : (
+          <NavLink to="/domains" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <span className="sidebar-icon">🌍</span>
+            Domains & DNS
+          </NavLink>
+        )}
       </nav>
     </aside>
   );
@@ -87,7 +81,7 @@ function Header() {
   return (
     <header className="header">
       <div className="header-title">
-        <h1>{currentDomain?.name || 'Hibana Stack'}</h1>
+        <h1>{currentDomain ? currentDomain.name : 'Hibana Stack'}</h1>
       </div>
       <div className="header-actions">
         <span className="user-name">{user?.username}</span>
@@ -113,21 +107,49 @@ function Layout({ children }) {
   );
 }
 
+// Guard for domain-specific routes
+function DomainRoute({ children }) {
+  const { currentDomain, loading } = useDomain();
+
+  if (loading) {
+    return <div className="loading"><div className="spinner"></div></div>;
+  }
+
+  // Redirect to domains if no domain selected
+  if (!currentDomain) {
+    return <Navigate to="/domains" />;
+  }
+
+  return children;
+}
+
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
         path="/"
-        element={<Navigate to="/services" />}
+        element={<Navigate to="/domains" />}
+      />
+      <Route
+        path="/domains"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <Domains />
+            </Layout>
+          </PrivateRoute>
+        }
       />
       <Route
         path="/services"
         element={
           <PrivateRoute>
-            <Layout>
-              <Services />
-            </Layout>
+            <DomainRoute>
+              <Layout>
+                <Services />
+              </Layout>
+            </DomainRoute>
           </PrivateRoute>
         }
       />
@@ -135,9 +157,11 @@ function AppRoutes() {
         path="/emails"
         element={
           <PrivateRoute>
-            <Layout>
-              <Emails />
-            </Layout>
+            <DomainRoute>
+              <Layout>
+                <Emails />
+              </Layout>
+            </DomainRoute>
           </PrivateRoute>
         }
       />
@@ -145,9 +169,11 @@ function AppRoutes() {
         path="/ssh-keys"
         element={
           <PrivateRoute>
-            <Layout>
-              <SSHKeys />
-            </Layout>
+            <DomainRoute>
+              <Layout>
+                <SSHKeys />
+              </Layout>
+            </DomainRoute>
           </PrivateRoute>
         }
       />
@@ -155,13 +181,15 @@ function AppRoutes() {
         path="/dns"
         element={
           <PrivateRoute>
-            <Layout>
-              <DNS />
-            </Layout>
+            <DomainRoute>
+              <Layout>
+                <DNS />
+              </Layout>
+            </DomainRoute>
           </PrivateRoute>
         }
       />
-      <Route path="*" element={<Navigate to="/services" />} />
+      <Route path="*" element={<Navigate to="/domains" />} />
     </Routes>
   );
 }

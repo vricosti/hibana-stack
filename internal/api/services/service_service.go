@@ -13,25 +13,25 @@ import (
 	"strings"
 
 	"github.com/vricosti/hibana-stack/internal/api/models"
+	"github.com/vricosti/hibana-stack/internal/dnsprovider"
 	"github.com/vricosti/hibana-stack/internal/utils"
 )
 
 // ServiceService handles service/container operations
 type ServiceService struct {
-	db *sql.DB
+	db     *sql.DB
+	pdnsDB *sql.DB
 }
 
 // NewServiceService creates a new service service
-func NewServiceService(db *sql.DB) *ServiceService {
-	return &ServiceService{db: db}
+func NewServiceService(db *sql.DB, pdnsDB *sql.DB) *ServiceService {
+	return &ServiceService{db: db, pdnsDB: pdnsDB}
 }
 
 // ListServices returns all services for a domain
 func (s *ServiceService) ListServices(domainName string) ([]models.Service, error) {
-	// Get subdomains from database
-	query := `
-		SELECT d.id, d.name FROM domains d WHERE d.name = $1
-	`
+	// Get domain from database
+	query := `SELECT d.id, d.name FROM domains d WHERE d.name = $1`
 	var domainID int
 	var name string
 	err := s.db.QueryRow(query, domainName).Scan(&domainID, &name)
@@ -48,25 +48,51 @@ func (s *ServiceService) ListServices(domainName string) ([]models.Service, erro
 			Role:          "website",
 			ContainerName: "www-" + systemName,
 			Deployable:    true,
+			IsCustom:      false,
 		},
 		{
 			Name:          "adm",
 			Role:          "webadmin",
 			ContainerName: "adm-" + systemName,
 			Deployable:    false,
+			IsCustom:      false,
 		},
 		{
 			Name:          "webmail",
 			Role:          "webmail",
 			ContainerName: "webmail-" + systemName,
 			Deployable:    false,
+			IsCustom:      false,
 		},
 		{
 			Name:          "mail",
 			Role:          "mailserver",
 			ContainerName: "", // System service, no container
 			Deployable:    false,
+			IsCustom:      false,
 		},
+	}
+
+	// Get custom subdomains from database
+	subdomainQuery := `SELECT name, role FROM subdomains WHERE domain_id = $1 ORDER BY name`
+	rows, err := s.db.Query(subdomainQuery, domainID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query subdomains: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var subName, subRole string
+		if err := rows.Scan(&subName, &subRole); err != nil {
+			continue
+		}
+		services = append(services, models.Service{
+			Name:          subName,
+			Role:          subRole,
+			ContainerName: subName + "-" + systemName,
+			Deployable:    true, // Custom websites are deployable
+			IsCustom:      true,
+		})
 	}
 
 	// Get status for each service
@@ -80,6 +106,225 @@ func (s *ServiceService) ListServices(domainName string) ([]models.Service, erro
 	}
 
 	return services, nil
+}
+
+// IsDeployable checks if a service is deployable
+func (s *ServiceService) IsDeployable(domainName, serviceName string) bool {
+	// www is always deployable
+	if serviceName == "www" {
+		return true
+	}
+
+	// Check if it's a custom subdomain (which are deployable)
+	query := `
+		SELECT 1 FROM subdomains s
+		JOIN domains d ON s.domain_id = d.id
+		WHERE d.name = $1 AND s.name = $2
+	`
+	var exists int
+	err := s.db.QueryRow(query, domainName, serviceName).Scan(&exists)
+	return err == nil
+}
+
+// CreateSubdomain creates a new custom subdomain service
+func (s *ServiceService) CreateSubdomain(domainName, subdomainName string) (*models.Service, error) {
+	// Get domain ID and server IP
+	var domainID int
+	var serverIP string
+	err := s.db.QueryRow(`SELECT id, server_ip FROM domains WHERE name = $1`, domainName).Scan(&domainID, &serverIP)
+	if err != nil {
+		return nil, fmt.Errorf("domain not found: %w", err)
+	}
+
+	// Insert subdomain into database
+	_, err = s.db.Exec(`
+		INSERT INTO subdomains (domain_id, name, role) VALUES ($1, $2, 'website')
+	`, domainID, subdomainName)
+	if err != nil {
+		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
+			return nil, fmt.Errorf("subdomain '%s' already exists", subdomainName)
+		}
+		return nil, fmt.Errorf("failed to create subdomain: %w", err)
+	}
+
+	// Create directory structure
+	if err := s.createSubdomainDirectories(domainName, subdomainName); err != nil {
+		// Rollback database insert
+		s.db.Exec(`DELETE FROM subdomains WHERE domain_id = $1 AND name = $2`, domainID, subdomainName)
+		return nil, fmt.Errorf("failed to create directories: %w", err)
+	}
+
+	// Create DNS A record for the subdomain
+	if err := s.createSubdomainDNSRecord(domainName, subdomainName, serverIP); err != nil {
+		// Log but don't fail - DNS can be added manually
+		fmt.Printf("Warning: could not create DNS record for %s.%s: %v\n", subdomainName, domainName, err)
+	}
+
+	systemName := utils.DomainToSystemName(domainName)
+	return &models.Service{
+		Name:          subdomainName,
+		Role:          "website",
+		ContainerName: subdomainName + "-" + systemName,
+		Status:        "not_deployed",
+		Deployable:    true,
+		IsCustom:      true,
+	}, nil
+}
+
+// DeleteSubdomain deletes a custom subdomain service
+func (s *ServiceService) DeleteSubdomain(domainName, subdomainName string) error {
+	// Get domain ID
+	var domainID int
+	err := s.db.QueryRow(`SELECT id FROM domains WHERE name = $1`, domainName).Scan(&domainID)
+	if err != nil {
+		return fmt.Errorf("domain not found: %w", err)
+	}
+
+	// Check if subdomain exists
+	var exists int
+	err = s.db.QueryRow(`SELECT 1 FROM subdomains WHERE domain_id = $1 AND name = $2`, domainID, subdomainName).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("subdomain not found: %w", err)
+	}
+
+	// Stop and remove container
+	systemName := utils.DomainToSystemName(domainName)
+	containerName := subdomainName + "-" + systemName
+	domainPath := utils.DomainToPath(domainName)
+	composePath := filepath.Join(domainPath, subdomainName, "docker-compose.yml")
+
+	if _, err := os.Stat(composePath); err == nil {
+		cmd := exec.Command("docker-compose", "-f", composePath, "down", "--rmi", "local", "-v")
+		cmd.Run() // Ignore errors
+	}
+
+	// Remove container if it exists
+	exec.Command("docker", "rm", "-f", containerName).Run()
+
+	// Remove directory
+	servicePath := filepath.Join(domainPath, subdomainName)
+	if err := os.RemoveAll(servicePath); err != nil {
+		// Log but don't fail
+		fmt.Printf("Warning: could not remove directory %s: %v\n", servicePath, err)
+	}
+
+	// Delete DNS record for the subdomain
+	if err := s.deleteSubdomainDNSRecord(domainName, subdomainName); err != nil {
+		// Log but don't fail
+		fmt.Printf("Warning: could not delete DNS record for %s.%s: %v\n", subdomainName, domainName, err)
+	}
+
+	// Delete from database
+	_, err = s.db.Exec(`DELETE FROM subdomains WHERE domain_id = $1 AND name = $2`, domainID, subdomainName)
+	if err != nil {
+		return fmt.Errorf("failed to delete subdomain: %w", err)
+	}
+
+	return nil
+}
+
+// createSubdomainDirectories creates the directory structure for a new subdomain
+func (s *ServiceService) createSubdomainDirectories(domainName, subdomainName string) error {
+	domainPath := utils.DomainToPath(domainName)
+	servicePath := filepath.Join(domainPath, subdomainName)
+	systemName := utils.DomainToSystemName(domainName)
+	containerName := subdomainName + "-" + systemName
+
+	// Get domain username for ownership
+	var domainUsername string
+	_ = s.db.QueryRow(`
+		SELECT du.username FROM domain_users du
+		JOIN domains d ON du.domain_id = d.id
+		WHERE d.name = $1
+	`, domainName).Scan(&domainUsername)
+	// domainUsername may be empty if no domain user is configured
+
+	// Create directories
+	dirs := []string{
+		servicePath,
+		filepath.Join(servicePath, "src"),
+		filepath.Join(servicePath, "nginx"),
+		filepath.Join(servicePath, "logs"),
+	}
+
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+	}
+
+	// Create default Dockerfile
+	// Note: Build context is ./src, so paths are relative to that directory
+	// The nginx config is mounted as a volume, not copied in the image
+	dockerfile := `FROM nginx:alpine
+COPY index.html /usr/share/nginx/html/
+`
+	if err := os.WriteFile(filepath.Join(servicePath, "src", "Dockerfile"), []byte(dockerfile), 0644); err != nil {
+		return fmt.Errorf("failed to create Dockerfile: %w", err)
+	}
+
+	// Create default index.html
+	indexHTML := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+    <title>%s.%s</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
+        .container { text-align: center; }
+        h1 { color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>%s.%s</h1>
+        <p>Your website is ready to be deployed.</p>
+    </div>
+</body>
+</html>
+`, subdomainName, domainName, subdomainName, domainName)
+	if err := os.WriteFile(filepath.Join(servicePath, "src", "index.html"), []byte(indexHTML), 0644); err != nil {
+		return fmt.Errorf("failed to create index.html: %w", err)
+	}
+
+	// Create nginx config
+	nginxConf := `server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+        root /usr/share/nginx/html;
+    }
+}
+`
+	if err := os.WriteFile(filepath.Join(servicePath, "nginx", "default.conf"), []byte(nginxConf), 0644); err != nil {
+		return fmt.Errorf("failed to create nginx config: %w", err)
+	}
+
+	// Create docker-compose.yml
+	dockerCompose := fmt.Sprintf("version: '3.8'\n\nservices:\n  %s:\n    build:\n      context: ./src\n      dockerfile: Dockerfile\n    container_name: %s\n    restart: unless-stopped\n    volumes:\n      - ./logs:/var/log/nginx\n      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro\n    networks:\n      - traefik-network\n    labels:\n      - \"traefik.enable=true\"\n      - \"traefik.http.routers.%s.rule=Host(`%s.%s`)\"\n      - \"traefik.http.routers.%s.entrypoints=websecure\"\n      - \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"\n      - \"traefik.http.services.%s.loadbalancer.server.port=80\"\n      - \"traefik.http.routers.%s.middlewares=security-headers@file,compress@file\"\n\nnetworks:\n  traefik-network:\n    external: true\n",
+		subdomainName, containerName, containerName, subdomainName, domainName, containerName, containerName, containerName, containerName)
+
+	if err := os.WriteFile(filepath.Join(servicePath, "docker-compose.yml"), []byte(dockerCompose), 0644); err != nil {
+		return fmt.Errorf("failed to create docker-compose.yml: %w", err)
+	}
+
+	// Set ownership to domain user if configured
+	if domainUsername != "" {
+		cmd := exec.Command("chown", "-R", domainUsername+":hibana-domains", servicePath)
+		if err := cmd.Run(); err != nil {
+			// Log but don't fail - ownership can be fixed manually
+			fmt.Printf("Warning: could not set ownership for %s: %v\n", servicePath, err)
+		}
+	}
+
+	return nil
 }
 
 // getContainerStatus returns the status of a Docker container
@@ -100,6 +345,135 @@ func (s *ServiceService) getContainerStatus(containerName string) (string, error
 	}
 
 	return "stopped", nil
+}
+
+// getDNSProviderConfig retrieves the DNS provider configuration from the database
+func (s *ServiceService) getDNSProviderConfig() (providerType, providerName, apiToken string, err error) {
+	// Get DNS provider type and name from configuration
+	err = s.db.QueryRow(`SELECT value FROM configuration WHERE key = 'dns_provider_type'`).Scan(&providerType)
+	if err != nil {
+		return "", "", "", fmt.Errorf("DNS provider not configured")
+	}
+
+	err = s.db.QueryRow(`SELECT value FROM configuration WHERE key = 'dns_provider_name'`).Scan(&providerName)
+	if err != nil {
+		return "", "", "", fmt.Errorf("DNS provider name not found")
+	}
+
+	// Get API token from dns_providers table
+	err = s.db.QueryRow(`SELECT api_token FROM dns_providers WHERE provider = $1`, providerName).Scan(&apiToken)
+	if err != nil {
+		// API token may not be required for all providers
+		apiToken = ""
+	}
+
+	return providerType, providerName, apiToken, nil
+}
+
+// createSubdomainDNSRecord creates an A record for the subdomain
+func (s *ServiceService) createSubdomainDNSRecord(domainName, subdomainName, serverIP string) error {
+	providerType, providerName, apiToken, err := s.getDNSProviderConfig()
+	if err != nil {
+		return err
+	}
+
+	// Skip DNS record creation for manual type
+	if providerType == "manual" {
+		return nil
+	}
+
+	switch providerName {
+	case "hostinger":
+		if apiToken == "" {
+			return fmt.Errorf("Hostinger API token not configured")
+		}
+		provider := dnsprovider.NewHostingerProvider(apiToken)
+		// Create A record for the subdomain
+		records := []dnsprovider.HostingerRecord{
+			{
+				Type:    "A",
+				Name:    subdomainName,
+				Content: serverIP,
+				TTL:     300,
+			},
+		}
+		return provider.AddRecords(domainName, records)
+
+	case "powerdns":
+		// For local PowerDNS, insert directly into the database
+		if s.pdnsDB == nil {
+			return fmt.Errorf("PowerDNS database not configured")
+		}
+
+		// Get PowerDNS domain ID
+		var pdnsID int
+		err := s.pdnsDB.QueryRow(`SELECT id FROM domains WHERE name = $1`, domainName).Scan(&pdnsID)
+		if err != nil {
+			return fmt.Errorf("domain not found in PowerDNS: %w", err)
+		}
+
+		// Create the A record
+		recordName := subdomainName + "." + domainName
+		_, err = s.pdnsDB.Exec(`
+			INSERT INTO records (domain_id, name, type, content, ttl)
+			VALUES ($1, $2, 'A', $3, 300)
+		`, pdnsID, recordName, serverIP)
+		if err != nil {
+			return fmt.Errorf("failed to create DNS record: %w", err)
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("unsupported DNS provider: %s", providerName)
+	}
+}
+
+// deleteSubdomainDNSRecord deletes the A record for the subdomain
+func (s *ServiceService) deleteSubdomainDNSRecord(domainName, subdomainName string) error {
+	providerType, providerName, apiToken, err := s.getDNSProviderConfig()
+	if err != nil {
+		return err
+	}
+
+	// Skip DNS record deletion for manual type
+	if providerType == "manual" {
+		return nil
+	}
+
+	switch providerName {
+	case "hostinger":
+		if apiToken == "" {
+			return fmt.Errorf("Hostinger API token not configured")
+		}
+		provider := dnsprovider.NewHostingerProvider(apiToken)
+		return provider.DeleteRecord(domainName, subdomainName, "A")
+
+	case "powerdns":
+		// For local PowerDNS, delete from the database
+		if s.pdnsDB == nil {
+			return fmt.Errorf("PowerDNS database not configured")
+		}
+
+		// Get PowerDNS domain ID
+		var pdnsID int
+		err := s.pdnsDB.QueryRow(`SELECT id FROM domains WHERE name = $1`, domainName).Scan(&pdnsID)
+		if err != nil {
+			return fmt.Errorf("domain not found in PowerDNS: %w", err)
+		}
+
+		// Delete the A record
+		recordName := subdomainName + "." + domainName
+		_, err = s.pdnsDB.Exec(`
+			DELETE FROM records WHERE domain_id = $1 AND name = $2 AND type = 'A'
+		`, pdnsID, recordName)
+		if err != nil {
+			return fmt.Errorf("failed to delete DNS record: %w", err)
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("unsupported DNS provider: %s", providerName)
+	}
 }
 
 // StartService starts a service
@@ -181,9 +555,9 @@ func (s *ServiceService) GetLogs(domainName, serviceName string, lines int) (*mo
 
 // Deploy deploys a new version of a service
 func (s *ServiceService) Deploy(domainName, serviceName string, req *models.DeployRequest) (*models.DeployResponse, error) {
-	// Only www is deployable
-	if serviceName != "www" {
-		return nil, fmt.Errorf("only www service is deployable")
+	// Check if service is deployable
+	if !s.IsDeployable(domainName, serviceName) {
+		return nil, fmt.Errorf("service '%s' is not deployable", serviceName)
 	}
 
 	domainPath := utils.DomainToPath(domainName)

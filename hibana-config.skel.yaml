@@ -54,9 +54,9 @@ domains:
 
     # Email accounts for this domain
     email_accounts:
-      - username: admin
+      - username: contact
         password: __RANDOM__
-        full_name: Administrator
+        full_name: Contact
 
     # Domain user configuration
     # Creates a dedicated system user for managing the domain (e.g., example_com)

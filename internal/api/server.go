@@ -50,8 +50,10 @@ func (s *Server) Start() error {
 	emailService := services.NewEmailService(s.db)
 	dnsService := services.NewDNSService(s.db, s.pdnsDB)
 	sshKeyService := services.NewSSHKeyService(s.db)
-	serviceService := services.NewServiceService(s.db)
+	serviceService := services.NewServiceService(s.db, s.pdnsDB)
 	aliasService := services.NewAliasService(s.db, domainService)
+	configService := services.NewConfigService(s.db)
+	dnsProviderService := services.NewDNSProviderService(s.db)
 
 	// Create handlers
 	authHandler := handlers.NewAuthHandler(s.db, s.jwtManager, loginLimiter)
@@ -61,6 +63,8 @@ func (s *Server) Start() error {
 	sshKeyHandler := handlers.NewSSHKeyHandler(sshKeyService)
 	serviceHandler := handlers.NewServiceHandler(serviceService)
 	aliasHandler := handlers.NewAliasHandler(aliasService)
+	configHandler := handlers.NewConfigHandler(configService)
+	dnsProviderHandler := handlers.NewDNSProviderHandler(dnsProviderService)
 
 	// Create router
 	mux := http.NewServeMux()
@@ -92,6 +96,14 @@ func (s *Server) Start() error {
 
 	// SSH Key generation
 	mux.Handle("/api/v1/ssh-keys/generate", authMiddleware(http.HandlerFunc(sshKeyHandler.GenerateKeyPair)))
+
+	// Config routes
+	mux.Handle("/api/v1/config/dns-provider", authMiddleware(http.HandlerFunc(configHandler.GetDNSProvider)))
+
+	// DNS Provider routes
+	mux.Handle("/api/v1/dns-providers", authMiddleware(http.HandlerFunc(dnsProviderHandler.HandleProviders)))
+	mux.Handle("/api/v1/dns-providers/", authMiddleware(http.HandlerFunc(dnsProviderHandler.HandleProvider)))
+	mux.Handle("/api/v1/dns-providers/test", authMiddleware(http.HandlerFunc(dnsProviderHandler.TestConnection)))
 
 	// Static files for admin interface
 	if s.staticDir != "" {

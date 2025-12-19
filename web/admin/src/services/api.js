@@ -97,9 +97,30 @@ export const sshKeyAPI = {
   generate: () => api.post('/ssh-keys/generate').then(res => res.data.data)
 };
 
+// Config API
+export const configAPI = {
+  getDNSProvider: () => api.get('/config/dns-provider').then(res => res.data.data)
+};
+
+// DNS Provider API
+export const dnsProviderAPI = {
+  getAll: () => api.get('/dns-providers').then(res => res.data.data || []),
+  getById: (id) => api.get(`/dns-providers/${id}`).then(res => res.data.data),
+  create: (data) => api.post('/dns-providers', data),
+  delete: (id) => api.delete(`/dns-providers/${id}`),
+  testConnection: (data) => api.post('/dns-providers/test', data),
+  getAvailableDomains: (id) => api.get(`/dns-providers/${id}/domains`).then(res => res.data.data || [])
+};
+
 // Service API (Docker management)
 export const serviceAPI = {
   list: (domainName) => api.get(`/domains/${domainName}/services`).then(res => res.data.data),
+
+  create: (domainName, data) =>
+    api.post(`/domains/${domainName}/services`, data).then(res => res.data),
+
+  delete: (domainName, serviceName) =>
+    api.delete(`/domains/${domainName}/services/${serviceName}`).then(res => res.data),
 
   start: (domainName, serviceName) =>
     api.post(`/domains/${domainName}/services/${serviceName}/start`),
