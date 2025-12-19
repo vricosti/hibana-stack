@@ -185,38 +185,57 @@ function Services() {
                       <>
                         {service.status === 'stopped' || service.status === 'not_deployed' ? (
                           <button
-                            className="btn btn-primary btn-sm"
+                            className="btn-icon btn-icon-success"
                             onClick={() => handleAction(service.name, 'start')}
                             disabled={isActionLoading(service.name, 'start')}
+                            title="Start"
                           >
-                            {isActionLoading(service.name, 'start') ? '...' : 'Start'}
+                            {isActionLoading(service.name, 'start') ? '...' : (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                              </svg>
+                            )}
                           </button>
                         ) : (
                           <>
                             <button
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => handleAction(service.name, 'stop')}
-                              disabled={isActionLoading(service.name, 'stop')}
-                            >
-                              {isActionLoading(service.name, 'stop') ? '...' : 'Stop'}
-                            </button>
-                            <button
-                              className="btn btn-secondary btn-sm"
+                              className="btn-icon btn-icon-warning"
                               onClick={() => handleAction(service.name, 'restart')}
                               disabled={isActionLoading(service.name, 'restart')}
+                              title="Restart"
                             >
-                              {isActionLoading(service.name, 'restart') ? '...' : 'Restart'}
+                              {isActionLoading(service.name, 'restart') ? '...' : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M1 4v6h6M23 20v-6h-6"/>
+                                  <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                                </svg>
+                              )}
+                            </button>
+                            <button
+                              className="btn-icon btn-icon-danger"
+                              onClick={() => handleAction(service.name, 'stop')}
+                              disabled={isActionLoading(service.name, 'stop')}
+                              title="Stop"
+                            >
+                              {isActionLoading(service.name, 'stop') ? '...' : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                  <rect x="6" y="6" width="12" height="12" rx="1"/>
+                                </svg>
+                              )}
+                            </button>
+                            <button
+                              className="btn-icon"
+                              onClick={() => handleViewLogs(service)}
+                              title="Logs"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                                <line x1="16" y1="13" x2="8" y2="13"/>
+                                <line x1="16" y1="17" x2="8" y2="17"/>
+                              </svg>
                             </button>
                           </>
-                        )}
-
-                        {service.status === 'running' && (
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => handleViewLogs(service)}
-                          >
-                            Logs
-                          </button>
                         )}
 
                         {service.deployable && (
