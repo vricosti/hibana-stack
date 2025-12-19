@@ -57,7 +57,8 @@ export const domainAPI = {
   create: (data) => api.post('/domains', data),
   update: (id, data) => api.put(`/domains/${id}`, data),
   delete: (id) => api.delete(`/domains/${id}`),
-  getStats: () => api.get('/stats')
+  getStats: () => api.get('/stats'),
+  checkPrepared: (domainName) => api.get(`/domains/check-prepared?domain=${encodeURIComponent(domainName)}`).then(res => res.data.data)
 };
 
 // Email API

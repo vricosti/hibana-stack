@@ -315,6 +315,79 @@ func (h *HostingerProvider) AddRecords(domain string, records []HostingerRecord)
 	return h.updateRecords(domain, records)
 }
 
+// ReplaceRecords replaces DNS records for the domain (overwrites existing records of same name/type)
+func (h *HostingerProvider) ReplaceRecords(domain string, records []HostingerRecord) error {
+	return h.replaceRecords(domain, records)
+}
+
+// DeleteCNAMEAndCreateA deletes a CNAME record if it exists and creates an A record
+// This handles the common case where Hostinger has a default CNAME for www pointing to the root domain
+func (h *HostingerProvider) DeleteCNAMEAndCreateA(domain, name, ip string) error {
+	// Get existing records
+	existingRecords, err := h.getRecords(domain)
+	if err != nil {
+		return fmt.Errorf("failed to get existing records: %w", err)
+	}
+
+	// Check if there's a CNAME for this name
+	hasCNAME := false
+	for _, r := range existingRecords {
+		if r.Name == name && r.Type == "CNAME" {
+			hasCNAME = true
+			break
+		}
+	}
+
+	if hasCNAME {
+		// Build new zone without the CNAME, keeping all other records
+		var newRecords []HostingerRecord
+		for _, r := range existingRecords {
+			if r.Name == name && r.Type == "CNAME" {
+				continue // Skip the CNAME
+			}
+			newRecords = append(newRecords, r)
+		}
+
+		// Add the new A record
+		newRecords = append(newRecords, HostingerRecord{
+			Type:    "A",
+			Name:    name,
+			Content: ip,
+			TTL:     300,
+		})
+
+		// Reset zone and rebuild
+		resetURL := hostingerDNSAPIURL + "/zones/" + domain + "/reset"
+		req, err := http.NewRequest("POST", resetURL, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create reset request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+h.apiToken)
+
+		resp, err := h.client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to reset zone: %w", err)
+		}
+		resp.Body.Close()
+
+		// Re-add all records
+		if len(newRecords) > 0 {
+			return h.updateRecords(domain, newRecords)
+		}
+		return nil
+	}
+
+	// No CNAME, just use replaceRecords to update/create the A record
+	return h.replaceRecords(domain, []HostingerRecord{
+		{
+			Type:    "A",
+			Name:    name,
+			Content: ip,
+			TTL:     300,
+		},
+	})
+}
+
 // DeleteRecord deletes a DNS record from a domain
 func (h *HostingerProvider) DeleteRecord(domain, name, recordType string) error {
 	// Get existing records

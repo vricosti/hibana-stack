@@ -35,19 +35,25 @@ func NewSSHKeyService(db *sql.DB) *SSHKeyService {
 func (s *SSHKeyService) ListKeys(domainName string) ([]models.SSHKey, error) {
 	// Get domain info and username
 	var domainID int
-	var username string
+	var usernameNull sql.NullString
 	err := s.db.QueryRow(`
 		SELECT d.id, du.username
 		FROM domains d
 		LEFT JOIN domain_users du ON d.id = du.domain_id
 		WHERE d.name = $1
-	`, domainName).Scan(&domainID, &username)
+	`, domainName).Scan(&domainID, &usernameNull)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("domain not found or no domain user configured")
+		return nil, fmt.Errorf("domain not found")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get domain info: %w", err)
+	}
+
+	// If no domain_users entry, derive username from domain name
+	username := usernameNull.String
+	if !usernameNull.Valid || username == "" {
+		username = utils.DomainToSystemName(domainName)
 	}
 
 	// Read authorized_keys file
@@ -118,19 +124,25 @@ func (s *SSHKeyService) AddKey(domainName, publicKey, label string) error {
 
 	// Get domain info and username
 	var domainID int
-	var username string
+	var usernameNull sql.NullString
 	err := s.db.QueryRow(`
 		SELECT d.id, du.username
 		FROM domains d
 		LEFT JOIN domain_users du ON d.id = du.domain_id
 		WHERE d.name = $1
-	`, domainName).Scan(&domainID, &username)
+	`, domainName).Scan(&domainID, &usernameNull)
 
 	if err == sql.ErrNoRows {
-		return fmt.Errorf("domain not found or no domain user configured")
+		return fmt.Errorf("domain not found")
 	}
 	if err != nil {
 		return fmt.Errorf("failed to get domain info: %w", err)
+	}
+
+	// If no domain_users entry, derive username from domain name
+	username := usernameNull.String
+	if !usernameNull.Valid || username == "" {
+		username = utils.DomainToSystemName(domainName)
 	}
 
 	// Calculate fingerprint
@@ -188,19 +200,25 @@ func (s *SSHKeyService) AddKey(domainName, publicKey, label string) error {
 func (s *SSHKeyService) RemoveKey(domainName, fingerprint string) error {
 	// Get domain info
 	var domainID int
-	var username string
+	var usernameNull sql.NullString
 	err := s.db.QueryRow(`
 		SELECT d.id, du.username
 		FROM domains d
 		LEFT JOIN domain_users du ON d.id = du.domain_id
 		WHERE d.name = $1
-	`, domainName).Scan(&domainID, &username)
+	`, domainName).Scan(&domainID, &usernameNull)
 
 	if err == sql.ErrNoRows {
-		return fmt.Errorf("domain not found or no domain user configured")
+		return fmt.Errorf("domain not found")
 	}
 	if err != nil {
 		return fmt.Errorf("failed to get domain info: %w", err)
+	}
+
+	// If no domain_users entry, derive username from domain name
+	username := usernameNull.String
+	if !usernameNull.Valid || username == "" {
+		username = utils.DomainToSystemName(domainName)
 	}
 
 	// Read authorized_keys file
@@ -391,19 +409,25 @@ func setSSHOwnership(username, sshDir string) error {
 // AddExternalKey adds a private key for external service access (e.g., GitHub)
 func (s *SSHKeyService) AddExternalKey(domainName string, req *models.ExternalSSHKeyRequest) error {
 	// Get domain info and username
-	var username string
+	var usernameNull sql.NullString
 	err := s.db.QueryRow(`
 		SELECT du.username
 		FROM domains d
 		LEFT JOIN domain_users du ON d.id = du.domain_id
 		WHERE d.name = $1
-	`, domainName).Scan(&username)
+	`, domainName).Scan(&usernameNull)
 
 	if err == sql.ErrNoRows {
-		return fmt.Errorf("domain not found or no domain user configured")
+		return fmt.Errorf("domain not found")
 	}
 	if err != nil {
 		return fmt.Errorf("failed to get domain info: %w", err)
+	}
+
+	// If no domain_users entry, derive username from domain name
+	username := usernameNull.String
+	if !usernameNull.Valid || username == "" {
+		username = utils.DomainToSystemName(domainName)
 	}
 
 	domainPath := utils.DomainToPath(domainName)

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, NavLink, useNavigate } from 're
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DomainProvider, useDomain } from './context/DomainContext';
 import Login from './pages/Login';
+import DNSProviders from './pages/DNSProviders';
 import Domains from './pages/Domains';
 import Services from './pages/Services';
 import Emails from './pages/Emails';
@@ -64,10 +65,16 @@ function Sidebar() {
             </NavLink>
           </>
         ) : (
-          <NavLink to="/domains" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-            <span className="sidebar-icon">🌍</span>
-            Domains & DNS
-          </NavLink>
+          <>
+            <NavLink to="/dns-providers" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+              <span className="sidebar-icon">🔌</span>
+              DNS Providers
+            </NavLink>
+            <NavLink to="/domains" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+              <span className="sidebar-icon">🌍</span>
+              Domains
+            </NavLink>
+          </>
         )}
       </nav>
     </aside>
@@ -130,6 +137,16 @@ function AppRoutes() {
       <Route
         path="/"
         element={<Navigate to="/domains" />}
+      />
+      <Route
+        path="/dns-providers"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <DNSProviders />
+            </Layout>
+          </PrivateRoute>
+        }
       />
       <Route
         path="/domains"

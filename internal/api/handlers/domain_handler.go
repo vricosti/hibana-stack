@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -147,6 +148,41 @@ func (h *DomainHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, models.APIResponse{
 		Success: true,
 		Data:    stats,
+	})
+}
+
+// CheckPrepared checks if a domain is prepared (directory exists)
+func (h *DomainHandler) CheckPrepared(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Get domain name from query parameter
+	domainName := r.URL.Query().Get("domain")
+	if domainName == "" {
+		respondError(w, http.StatusBadRequest, "domain parameter required")
+		return
+	}
+
+	// Convert domain to system name (e.g., vricosti.com -> vricosti-com)
+	systemName := strings.ReplaceAll(domainName, ".", "-")
+	domainDir := "/srv/" + systemName
+
+	// Check if directory exists
+	prepared := false
+	if info, err := os.Stat(domainDir); err == nil && info.IsDir() {
+		prepared = true
+	}
+
+	respondJSON(w, http.StatusOK, models.APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"domain":      domainName,
+			"prepared":    prepared,
+			"directory":   domainDir,
+			"system_name": systemName,
+		},
 	})
 }
 

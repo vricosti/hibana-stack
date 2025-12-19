@@ -4,8 +4,7 @@ import { dnsProviderAPI } from '../services/api';
 const PROVIDERS = [
   { value: 'hostinger', label: 'Hostinger', requiresToken: true },
   { value: 'cloudflare', label: 'Cloudflare', requiresToken: true },
-  { value: 'ovh', label: 'OVH', requiresOVH: true },
-  { value: 'powerdns', label: 'PowerDNS (Local)', isLocal: true }
+  { value: 'ovh', label: 'OVH', requiresOVH: true }
 ];
 
 export default function DNSProviderModal({ onClose }) {
@@ -27,11 +26,10 @@ export default function DNSProviderModal({ onClose }) {
   const selectedProvider = PROVIDERS.find(p => p.value === formData.provider);
 
   const handleProviderChange = (provider) => {
-    const p = PROVIDERS.find(pr => pr.value === provider);
     setFormData({
       ...formData,
       provider,
-      type: p?.isLocal ? 'local' : 'external',
+      type: 'external',
       api_token: '',
       application_key: '',
       application_secret: '',
@@ -191,13 +189,7 @@ export default function DNSProviderModal({ onClose }) {
               </>
             )}
 
-            {selectedProvider?.isLocal && (
-              <div className="alert alert-success" style={{ marginTop: '10px' }}>
-                PowerDNS is already installed on this server. No additional configuration needed.
-              </div>
-            )}
-
-            {formData.provider && !selectedProvider?.isLocal && (
+            {formData.provider && (
               <div style={{ marginTop: '15px' }}>
                 <button
                   type="button"
