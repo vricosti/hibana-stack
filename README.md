@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo-hibana-stack.png" alt="Hibana Stack" width="300">
+</p>
+
 # Hibana Stack
 
 Configure your Ubuntu server with DNS, mail, and multi-domain support in one command.
