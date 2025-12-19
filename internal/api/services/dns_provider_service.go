@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -52,9 +53,13 @@ type DNSProviderCreate struct {
 
 // AvailableDomain represents a domain available from a DNS provider
 type AvailableDomain struct {
-	Domain    string `json:"domain"`
-	Status    string `json:"status,omitempty"`
-	ExpiresAt string `json:"expires_at,omitempty"`
+	Domain     string `json:"domain"`
+	Status     string `json:"status,omitempty"`
+	ExpiresAt  string `json:"expires_at,omitempty"`
+	Target     string `json:"target,omitempty"`
+	RecordType string `json:"record_type,omitempty"`
+	Available  bool   `json:"available"`
+	Managed    bool   `json:"managed"` // true if domain is already managed by the server
 }
 
 // GetAll returns all DNS providers
@@ -231,19 +236,81 @@ func (s *DNSProviderService) getHostingerDomains(apiToken string) ([]AvailableDo
 		}
 	}
 
-	// Filter out already configured domains
+	// Build list of all domains with DNS info
 	var available []AvailableDomain
 	for _, d := range hostingerDomains {
-		if !configuredDomains[d.Domain] {
-			available = append(available, AvailableDomain{
-				Domain:    d.Domain,
-				Status:    d.Status,
-				ExpiresAt: d.ExpiresAt,
-			})
+		ad := AvailableDomain{
+			Domain:    d.Domain,
+			Status:    d.Status,
+			ExpiresAt: d.ExpiresAt,
+			Managed:   configuredDomains[d.Domain], // Mark if already managed
 		}
+
+		// Fetch DNS records for this domain to get the target
+		target, recordType := s.getHostingerDomainTarget(apiToken, d.Domain)
+		ad.Target = target
+		ad.RecordType = recordType
+		ad.Available = isHostingerParkingIP(target) || configuredDomains[d.Domain]
+
+		available = append(available, ad)
 	}
 
 	return available, nil
+}
+
+// isHostingerParkingIP checks if the IP is in Hostinger's parking range (84.32.84.0 - 84.32.84.255)
+func isHostingerParkingIP(ip string) bool {
+	if ip == "" || ip == "-" {
+		return true // No IP configured = available
+	}
+	// Check if IP starts with 84.32.84.
+	return strings.HasPrefix(ip, "84.32.84.")
+}
+
+// getHostingerDomainTarget fetches the root A or CNAME record for a domain
+func (s *DNSProviderService) getHostingerDomainTarget(apiToken, domain string) (string, string) {
+	req, err := http.NewRequest("GET", "https://developers.hostinger.com/api/dns/v1/zones/"+domain, nil)
+	if err != nil {
+		return "-", ""
+	}
+
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "-", ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "-", ""
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var records []struct {
+		Name    string `json:"name"`
+		Type    string `json:"type"`
+		Records []struct {
+			Content string `json:"content"`
+		} `json:"records"`
+	}
+
+	if err := json.Unmarshal(body, &records); err != nil {
+		return "-", ""
+	}
+
+	// Look for root A or CNAME record (name = "@" or empty)
+	for _, r := range records {
+		if r.Name == "@" || r.Name == "" {
+			if (r.Type == "A" || r.Type == "CNAME") && len(r.Records) > 0 {
+				return r.Records[0].Content, r.Type
+			}
+		}
+	}
+
+	return "-", ""
 }
 
 // TestConnection tests the connection to a DNS provider

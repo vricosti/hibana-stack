@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/vricosti/hibana-stack/internal/api/models"
+	"github.com/vricosti/hibana-stack/internal/dnsprovider"
 	"github.com/vricosti/hibana-stack/internal/installer"
 )
 
@@ -116,36 +117,28 @@ func (s *DomainService) Create(create *models.DomainCreate) (*models.Domain, err
 		return nil, fmt.Errorf("failed to insert domain: %w", err)
 	}
 
-	// Create domain in PowerDNS
-	if err := s.createDomainInPowerDNS(create.Name); err != nil {
-		// Rollback Hibana insert
-		s.db.Exec("DELETE FROM domains WHERE id = $1", domainID)
-		return nil, fmt.Errorf("failed to create domain in PowerDNS: %w", err)
-	}
+	// Get DNS provider configuration
+	providerType, providerName, apiToken := s.getDNSProviderConfig()
 
-	// Create domain user if requested
-	if create.CreateUser && s.installer != nil {
-		// Ensure hibana-domains group exists
-		if err := s.installer.EnsureHibanaDomainGroup(); err != nil {
-			return nil, fmt.Errorf("failed to ensure hibana-domains group: %w", err)
+	// Handle DNS based on provider type
+	if providerType == "local" {
+		// Create domain in PowerDNS for local DNS
+		if err := s.createDomainInPowerDNS(create.Name); err != nil {
+			// Rollback Hibana insert
+			s.db.Exec("DELETE FROM domains WHERE id = $1", domainID)
+			return nil, fmt.Errorf("failed to create domain in PowerDNS: %w", err)
 		}
-
-		// Ensure master encryption key exists
-		if err := s.installer.EnsureMasterKey(); err != nil {
-			return nil, fmt.Errorf("failed to ensure master key: %w", err)
-		}
-
-		// Create domain user
-		result, err := s.installer.CreateDomainUser(create.Name, create.SSHPublicKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create domain user: %w", err)
-		}
-
-		// Store domain user in database
-		if err := s.installer.StoreDomainUser(create.Name, result); err != nil {
-			return nil, fmt.Errorf("failed to store domain user: %w", err)
+	} else if providerType == "external" {
+		// Update DNS records at external provider
+		if err := s.updateExternalDNS(create.Name, serverIP, providerName, apiToken); err != nil {
+			// Log but don't fail - DNS can be updated manually
+			fmt.Printf("Warning: could not update DNS for %s: %v\n", create.Name, err)
 		}
 	}
+
+	// Note: User creation is disabled from API for security reasons.
+	// System users can only be created when running hibana CLI directly on the host.
+	// The create.CreateUser flag is ignored here.
 
 	// Return created domain
 	return s.GetByID(domainID)
@@ -326,4 +319,49 @@ func sanitizeDomainName(domain string) string {
 	domain = strings.ToLower(domain)
 	domain = strings.TrimSpace(domain)
 	return domain
+}
+
+// getDNSProviderConfig retrieves the DNS provider configuration from the database
+func (s *DomainService) getDNSProviderConfig() (providerType, providerName, apiToken string) {
+	// Get DNS provider type and name from configuration
+	err := s.db.QueryRow(`SELECT value FROM configuration WHERE key = 'dns_provider_type'`).Scan(&providerType)
+	if err != nil {
+		return "", "", ""
+	}
+
+	err = s.db.QueryRow(`SELECT value FROM configuration WHERE key = 'dns_provider_name'`).Scan(&providerName)
+	if err != nil {
+		return providerType, "", ""
+	}
+
+	// Get API token from dns_providers table
+	_ = s.db.QueryRow(`SELECT api_token FROM dns_providers WHERE provider = $1`, providerName).Scan(&apiToken)
+
+	return providerType, providerName, apiToken
+}
+
+// updateExternalDNS updates DNS records at an external provider when adding a new domain
+func (s *DomainService) updateExternalDNS(domainName, serverIP, providerName, apiToken string) error {
+	switch providerName {
+	case "hostinger":
+		if apiToken == "" {
+			return fmt.Errorf("Hostinger API token not configured")
+		}
+		provider := dnsprovider.NewHostingerProvider(apiToken)
+
+		// Update @ A record to point to the server IP
+		// This replaces the parking IP with our server IP
+		records := []dnsprovider.HostingerRecord{
+			{
+				Type:    "A",
+				Name:    "@",
+				Content: serverIP,
+				TTL:     300,
+			},
+		}
+		return provider.ReplaceRecords(domainName, records)
+
+	default:
+		return fmt.Errorf("unsupported DNS provider: %s", providerName)
+	}
 }

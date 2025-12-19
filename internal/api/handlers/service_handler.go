@@ -132,8 +132,9 @@ func (h *ServiceHandler) Create(w http.ResponseWriter, r *http.Request, domainNa
 		return
 	}
 
-	// Check for reserved names
-	reservedNames := []string{"www", "adm", "mail", "webmail", "api", "ns1", "ns2", "ftp", "smtp", "imap", "pop", "pop3"}
+	// Check for reserved names (system-level services only)
+	// www and webmail are allowed as they can be created for secondary domains
+	reservedNames := []string{"adm", "mail", "api", "ns1", "ns2", "ftp", "smtp", "imap", "pop", "pop3"}
 	for _, reserved := range reservedNames {
 		if req.Name == reserved {
 			respondServiceError(w, http.StatusBadRequest, fmt.Sprintf("'%s' is a reserved subdomain name", req.Name))
@@ -155,8 +156,8 @@ func (h *ServiceHandler) Create(w http.ResponseWriter, r *http.Request, domainNa
 
 // Delete deletes a custom subdomain service
 func (h *ServiceHandler) Delete(w http.ResponseWriter, r *http.Request, domainName, serviceName string) {
-	// Check for reserved names that cannot be deleted
-	reservedNames := []string{"www", "adm", "mail", "webmail"}
+	// Check for reserved names that cannot be deleted (system-level only)
+	reservedNames := []string{"adm", "mail"}
 	for _, reserved := range reservedNames {
 		if serviceName == reserved {
 			respondServiceError(w, http.StatusBadRequest, fmt.Sprintf("Cannot delete system service '%s'", serviceName))

@@ -28,7 +28,7 @@ func NewServiceService(db *sql.DB, pdnsDB *sql.DB) *ServiceService {
 	return &ServiceService{db: db, pdnsDB: pdnsDB}
 }
 
-// ListServices returns all services for a domain
+// ListServices returns all services for a domain by scanning the filesystem
 func (s *ServiceService) ListServices(domainName string) ([]models.Service, error) {
 	// Get domain from database
 	query := `SELECT d.id, d.name FROM domains d WHERE d.name = $1`
@@ -40,72 +40,133 @@ func (s *ServiceService) ListServices(domainName string) ([]models.Service, erro
 	}
 
 	systemName := utils.DomainToSystemName(domainName)
+	domainPath := utils.DomainToPath(domainName)
 
-	// Define standard services
-	services := []models.Service{
-		{
-			Name:          "www",
-			Role:          "website",
-			ContainerName: "www-" + systemName,
-			Deployable:    true,
-			IsCustom:      false,
-		},
-		{
-			Name:          "adm",
-			Role:          "webadmin",
-			ContainerName: "adm-" + systemName,
-			Deployable:    false,
-			IsCustom:      false,
-		},
-		{
-			Name:          "webmail",
-			Role:          "webmail",
-			ContainerName: "webmail-" + systemName,
-			Deployable:    false,
-			IsCustom:      false,
-		},
-		{
-			Name:          "mail",
-			Role:          "mailserver",
-			ContainerName: "", // System service, no container
-			Deployable:    false,
-			IsCustom:      false,
-		},
+	var services []models.Service
+	foundServices := make(map[string]bool)
+
+	// Scan domain directory for services (subdirectories with docker-compose.yml)
+	entries, err := os.ReadDir(domainPath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to read domain directory: %w", err)
 	}
 
-	// Get custom subdomains from database
-	subdomainQuery := `SELECT name, role FROM subdomains WHERE domain_id = $1 ORDER BY name`
-	rows, err := s.db.Query(subdomainQuery, domainID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query subdomains: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var subName, subRole string
-		if err := rows.Scan(&subName, &subRole); err != nil {
+	for _, entry := range entries {
+		if !entry.IsDir() {
 			continue
 		}
+
+		serviceName := entry.Name()
+		servicePath := filepath.Join(domainPath, serviceName)
+
+		// Check if it has a docker-compose.yml
+		composePath := filepath.Join(servicePath, "docker-compose.yml")
+		if _, err := os.Stat(composePath); os.IsNotExist(err) {
+			continue
+		}
+
+		// Determine role and deployability based on service name
+		role := "website"
+		deployable := true
+		isCustom := true
+
+		switch serviceName {
+		case "www":
+			role = "website"
+			deployable = true
+			isCustom = false
+		case "adm":
+			role = "webadmin"
+			deployable = false
+			isCustom = false
+		case "webmail":
+			role = "webmail"
+			deployable = false
+			isCustom = false
+		}
+
+		containerName := serviceName + "-" + systemName
+		status, _ := s.getContainerStatus(containerName)
+
 		services = append(services, models.Service{
-			Name:          subName,
-			Role:          subRole,
-			ContainerName: subName + "-" + systemName,
-			Deployable:    true, // Custom websites are deployable
-			IsCustom:      true,
+			Name:          serviceName,
+			Role:          role,
+			ContainerName: containerName,
+			Status:        status,
+			Deployable:    deployable,
+			IsCustom:      isCustom,
+		})
+		foundServices[serviceName] = true
+	}
+
+	// Check for mail service (postfix) - only if domain is configured in postfix
+	if s.isMailConfigured(domainName) {
+		services = append(services, models.Service{
+			Name:          "mail",
+			Role:          "mailserver",
+			ContainerName: "",
+			Status:        s.getPostfixStatus(),
+			Deployable:    false,
+			IsCustom:      false,
 		})
 	}
 
-	// Get status for each service
-	for i := range services {
-		if services[i].ContainerName != "" {
-			status, _ := s.getContainerStatus(services[i].ContainerName)
-			services[i].Status = status
-		} else {
-			services[i].Status = "system"
+	// Add custom subdomains from database that don't have directories yet (pending creation)
+	subdomainQuery := `SELECT name, role FROM subdomains WHERE domain_id = $1 ORDER BY name`
+	rows, err := s.db.Query(subdomainQuery, domainID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var subName, subRole string
+			if err := rows.Scan(&subName, &subRole); err != nil {
+				continue
+			}
+			// Only add if not already found in filesystem
+			if !foundServices[subName] {
+				services = append(services, models.Service{
+					Name:          subName,
+					Role:          subRole,
+					ContainerName: subName + "-" + systemName,
+					Status:        "not_deployed",
+					Deployable:    true,
+					IsCustom:      true,
+				})
+			}
 		}
 	}
 
 	return services, nil
+}
+
+// isMailConfigured checks if mail is configured for this domain
+func (s *ServiceService) isMailConfigured(domainName string) bool {
+	// Check if postfix is installed
+	if _, err := os.Stat("/etc/postfix/main.cf"); os.IsNotExist(err) {
+		return false
+	}
+
+	// Check if this domain is in virtual_mailbox_domains
+	data, err := os.ReadFile("/etc/postfix/virtual_mailbox_domains")
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(string(data), domainName)
+}
+
+// getPostfixStatus returns the status of postfix service
+func (s *ServiceService) getPostfixStatus() string {
+	cmd := exec.Command("systemctl", "is-active", "postfix")
+	output, err := cmd.Output()
+	if err != nil {
+		return "stopped"
+	}
+
+	status := strings.TrimSpace(string(output))
+	if status == "active" {
+		return "running"
+	}
+	return "stopped"
 }
 
 // IsDeployable checks if a service is deployable
@@ -237,7 +298,12 @@ func (s *ServiceService) createSubdomainDirectories(domainName, subdomainName st
 		JOIN domains d ON du.domain_id = d.id
 		WHERE d.name = $1
 	`, domainName).Scan(&domainUsername)
-	// domainUsername may be empty if no domain user is configured
+
+	// If no domain_users entry, derive username from domain name
+	// (hibana add domain creates user but doesn't insert into domain_users)
+	if domainUsername == "" {
+		domainUsername = systemName // e.g., vricosti-com
+	}
 
 	// Create directories
 	dirs := []string{
@@ -388,16 +454,9 @@ func (s *ServiceService) createSubdomainDNSRecord(domainName, subdomainName, ser
 			return fmt.Errorf("Hostinger API token not configured")
 		}
 		provider := dnsprovider.NewHostingerProvider(apiToken)
-		// Create A record for the subdomain
-		records := []dnsprovider.HostingerRecord{
-			{
-				Type:    "A",
-				Name:    subdomainName,
-				Content: serverIP,
-				TTL:     300,
-			},
-		}
-		return provider.AddRecords(domainName, records)
+		// Use DeleteCNAMEAndCreateA to handle the case where a CNAME exists (e.g., www -> domain.com)
+		// This will delete the CNAME and create an A record pointing to the server IP
+		return provider.DeleteCNAMEAndCreateA(domainName, subdomainName, serverIP)
 
 	case "powerdns":
 		// For local PowerDNS, insert directly into the database

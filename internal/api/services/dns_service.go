@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/vricosti/hibana-stack/internal/api/models"
+	"github.com/vricosti/hibana-stack/internal/dnsprovider"
 )
 
 // DNSService handles DNS record operations
@@ -29,6 +30,12 @@ func (s *DNSService) GetByDomain(domainID int) ([]models.DNSRecord, error) {
 	err := s.hibanaDB.QueryRow("SELECT name FROM domains WHERE id = $1", domainID).Scan(&domainName)
 	if err != nil {
 		return nil, fmt.Errorf("domain not found: %w", err)
+	}
+
+	// Check if using external DNS provider
+	providerType, providerName, apiToken := s.getDNSProviderConfig()
+	if providerType == "external" {
+		return s.getRecordsFromExternalProvider(domainName, providerName, apiToken)
 	}
 
 	// Get PowerDNS domain ID
@@ -65,6 +72,69 @@ func (s *DNSService) GetByDomain(domainID int) ([]models.DNSRecord, error) {
 	}
 
 	return records, nil
+}
+
+// getDNSProviderConfig retrieves the DNS provider configuration from the database
+func (s *DNSService) getDNSProviderConfig() (providerType, providerName, apiToken string) {
+	// Get DNS provider type and name from configuration
+	err := s.hibanaDB.QueryRow(`SELECT value FROM configuration WHERE key = 'dns_provider_type'`).Scan(&providerType)
+	if err != nil {
+		return "", "", ""
+	}
+
+	err = s.hibanaDB.QueryRow(`SELECT value FROM configuration WHERE key = 'dns_provider_name'`).Scan(&providerName)
+	if err != nil {
+		return providerType, "", ""
+	}
+
+	// Get API token from dns_providers table
+	_ = s.hibanaDB.QueryRow(`SELECT api_token FROM dns_providers WHERE provider = $1`, providerName).Scan(&apiToken)
+
+	return providerType, providerName, apiToken
+}
+
+// getRecordsFromExternalProvider fetches DNS records from an external provider
+func (s *DNSService) getRecordsFromExternalProvider(domainName, providerName, apiToken string) ([]models.DNSRecord, error) {
+	switch providerName {
+	case "hostinger":
+		if apiToken == "" {
+			return nil, fmt.Errorf("Hostinger API token not configured")
+		}
+		provider := dnsprovider.NewHostingerProvider(apiToken)
+		hostingerRecords, err := provider.GetRecordsPublic(domainName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch records from Hostinger: %w", err)
+		}
+
+		// Convert Hostinger records to our model
+		var records []models.DNSRecord
+		id := 1
+		for _, hr := range hostingerRecords {
+			rec := models.DNSRecord{
+				ID:       id,
+				DomainID: 0, // External records don't have a local domain ID
+				Name:     hr.Name,
+				Type:     hr.Type,
+				Content:  hr.Content,
+				TTL:      hr.TTL,
+			}
+			// Parse priority from MX records
+			if hr.Type == "MX" {
+				// MX content format: "10 mail.example.com"
+				parts := strings.SplitN(hr.Content, " ", 2)
+				if len(parts) == 2 {
+					fmt.Sscanf(parts[0], "%d", &rec.Priority)
+					rec.Content = parts[1]
+				}
+			}
+			records = append(records, rec)
+			id++
+		}
+		return records, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported DNS provider: %s", providerName)
+	}
 }
 
 // GetByID returns a DNS record by ID

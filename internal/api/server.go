@@ -132,7 +132,9 @@ func (s *Server) routeDomainRequests(domainHandler *handlers.DomainHandler, emai
 		path := r.URL.Path
 
 		// Route based on the path structure
-		if strings.Contains(path, "/services") {
+		if strings.HasSuffix(path, "/check-prepared") || strings.Contains(path, "/check-prepared?") {
+			domainHandler.CheckPrepared(w, r)
+		} else if strings.Contains(path, "/services") {
 			serviceHandler.HandleServices(w, r)
 		} else if strings.Contains(path, "/ssh-keys") {
 			sshKeyHandler.HandleDomainSSHKeys(w, r)
