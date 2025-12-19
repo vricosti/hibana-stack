@@ -1,12 +1,29 @@
 package models
 
+import "time"
+
 // Service represents a subdomain service with its Docker container
 type Service struct {
 	Name          string `json:"name"`           // Subdomain name (www, adm, webmail, mail)
 	Role          string `json:"role"`           // Role (website, webadmin, webmail, mailserver)
 	ContainerName string `json:"container_name"` // Docker container name
 	Status        string `json:"status"`         // running, stopped, not_deployed
-	Deployable    bool   `json:"deployable"`     // Can be deployed (only www)
+	Deployable    bool   `json:"deployable"`     // Can be deployed (only www and custom websites)
+	IsCustom      bool   `json:"is_custom"`      // True if user-created subdomain
+}
+
+// Subdomain represents a custom subdomain stored in the database
+type Subdomain struct {
+	ID        int       `json:"id"`
+	DomainID  int       `json:"domain_id"`
+	Name      string    `json:"name"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// CreateSubdomainRequest represents a request to create a new subdomain
+type CreateSubdomainRequest struct {
+	Name string `json:"name"`
 }
 
 // ServiceAction represents a request to perform an action on a service

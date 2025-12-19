@@ -10,7 +10,7 @@ export function DomainProvider({ children }) {
   const [currentDomain, setCurrentDomain] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Load domains when authenticated
+  // Load domains when authenticated (but don't auto-select)
   useEffect(() => {
     if (isAuthenticated) {
       loadDomains();
@@ -26,6 +26,8 @@ export function DomainProvider({ children }) {
   useEffect(() => {
     if (currentDomain) {
       localStorage.setItem('hibana_current_domain', JSON.stringify(currentDomain));
+    } else {
+      localStorage.removeItem('hibana_current_domain');
     }
   }, [currentDomain]);
 
@@ -35,21 +37,7 @@ export function DomainProvider({ children }) {
       const response = await domainAPI.getAll();
       const domainList = response.data.data || [];
       setDomains(domainList);
-
-      // Restore from localStorage or select first domain
-      const saved = localStorage.getItem('hibana_current_domain');
-      if (saved) {
-        const savedDomain = JSON.parse(saved);
-        // Verify saved domain still exists
-        const exists = domainList.find(d => d.id === savedDomain.id);
-        if (exists) {
-          setCurrentDomain(exists);
-        } else if (domainList.length > 0) {
-          setCurrentDomain(domainList[0]);
-        }
-      } else if (domainList.length > 0) {
-        setCurrentDomain(domainList[0]);
-      }
+      // Don't auto-select domain - let user choose from Domains page
     } catch (error) {
       console.error('Failed to load domains:', error);
     } finally {
@@ -61,6 +49,10 @@ export function DomainProvider({ children }) {
     setCurrentDomain(domain);
   };
 
+  const clearDomain = () => {
+    setCurrentDomain(null);
+  };
+
   const refreshDomains = () => {
     loadDomains();
   };
@@ -70,6 +62,7 @@ export function DomainProvider({ children }) {
       domains,
       currentDomain,
       selectDomain,
+      clearDomain,
       refreshDomains,
       loading
     }}>

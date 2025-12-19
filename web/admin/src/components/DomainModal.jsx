@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
-import { domainAPI } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { domainAPI, dnsProviderAPI } from '../services/api';
 
-export default function DomainModal({ domain, onClose }) {
+export default function DomainModal({ domain, onClose, dnsProviders = [] }) {
+  const [selectedProvider, setSelectedProvider] = useState(dnsProviders[0]?.id || '');
+  const [availableDomains, setAvailableDomains] = useState([]);
+  const [loadingDomains, setLoadingDomains] = useState(false);
   const [formData, setFormData] = useState({
     name: domain?.name || '',
     server_ip: domain?.server_ip || '',
@@ -11,6 +14,30 @@ export default function DomainModal({ domain, onClose }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Load available domains when provider changes
+  useEffect(() => {
+    if (selectedProvider && !domain) {
+      loadAvailableDomains(selectedProvider);
+    }
+  }, [selectedProvider, domain]);
+
+  const loadAvailableDomains = async (providerId) => {
+    setLoadingDomains(true);
+    try {
+      const domains = await dnsProviderAPI.getAvailableDomains(providerId);
+      setAvailableDomains(domains || []);
+      // Auto-select first domain if available
+      if (domains && domains.length > 0 && !formData.name) {
+        setFormData(prev => ({ ...prev, name: domains[0].domain }));
+      }
+    } catch (err) {
+      console.error('Failed to load available domains:', err);
+      setAvailableDomains([]);
+    } finally {
+      setLoadingDomains(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,28 +62,83 @@ export default function DomainModal({ domain, onClose }) {
     }
   };
 
+  const currentProvider = dnsProviders.find(p => p.id === parseInt(selectedProvider));
+  const isExternalProvider = currentProvider && currentProvider.type === 'external';
+
   return (
     <div className="modal-overlay" onClick={() => onClose(false)}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{domain ? 'Edit Domain' : 'Add Domain'}</h3>
-          <button className="modal-close" onClick={() => onClose(false)}>×</button>
+          <button className="modal-close" onClick={() => onClose(false)}>&times;</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
             {error && <div className="alert alert-error">{error}</div>}
 
+            {!domain && dnsProviders.length > 1 && (
+              <div className="form-group">
+                <label>DNS Provider</label>
+                <select
+                  className="form-control"
+                  value={selectedProvider}
+                  onChange={(e) => {
+                    setSelectedProvider(e.target.value);
+                    setFormData(prev => ({ ...prev, name: '' }));
+                  }}
+                >
+                  {dnsProviders.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="form-group">
               <label>Domain Name *</label>
-              <input
-                type="text"
-                className="form-control"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-                disabled={!!domain}
-                placeholder="example.com"
-              />
+              {!domain && isExternalProvider ? (
+                loadingDomains ? (
+                  <div className="form-control" style={{ color: '#666' }}>Loading domains...</div>
+                ) : availableDomains.length > 0 ? (
+                  <select
+                    className="form-control"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
+                  >
+                    <option value="">Select a domain...</option>
+                    {availableDomains.map(d => (
+                      <option key={d.domain} value={d.domain}>
+                        {d.domain} {d.status && d.status !== 'active' ? `(${d.status})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      required
+                      placeholder="example.com"
+                    />
+                    <small className="text-warning">
+                      No domains found from provider. Enter domain name manually.
+                    </small>
+                  </div>
+                )
+              ) : (
+                <input
+                  type="text"
+                  className="form-control"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                  disabled={!!domain}
+                  placeholder="example.com"
+                />
+              )}
             </div>
 
             <div className="form-group">
@@ -82,6 +164,7 @@ export default function DomainModal({ domain, onClose }) {
                     />
                     <label htmlFor="create_user">Create domain user</label>
                   </div>
+                  <small>Creates a system user for web deployments and file management</small>
                 </div>
 
                 {formData.create_user && (

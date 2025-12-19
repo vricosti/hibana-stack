@@ -40,9 +40,9 @@ subdomains:
     role: website
 
 email_accounts:
-  - username: admin
+  - username: contact
     password: SECURE_PASSWORD
-    full_name: Administrator
+    full_name: Contact
 
 webadmin:
   username: admin
