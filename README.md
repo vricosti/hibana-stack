@@ -90,15 +90,19 @@ sudo hibana add domain newdomain.com
 
 ## Domain User
 
-A restricted system user is created for each domain for deploying apps:
+A restricted system user is created for each domain. The username is derived from the domain name (dots replaced by hyphens):
+
+| Domain | Username | Directory |
+|--------|----------|-----------|
+| example.com | example-com | /srv/example-com/ |
 
 ```bash
 # Deploy files
-scp -r dist/* user@server:/srv/yourdomain-com/www/src/
+scp -r dist/* example-com@server:/srv/example-com/www/src/
 
 # Restart containers
-ssh user@server
-cd /srv/yourdomain-com/www
+ssh example-com@server
+cd /srv/example-com/www
 sudo docker-compose up -d --build
 ```
 
