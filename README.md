@@ -4,10 +4,11 @@ Configure your Ubuntu server with DNS, mail, and multi-domain support in one com
 
 ## Features
 
-- PowerDNS for authoritative DNS management
+- DNS management: PowerDNS (self-hosted) or external providers (Hostinger, OVH, Cloudflare)
 - Mail server with DMARC, DKIM, SPF and SpamAssassin
 - Traefik reverse proxy with automatic SSL (Let's Encrypt)
 - Web admin interface at `adm.yourdomain.com`
+- Multi-domain support with per-domain users
 - Dockerized components
 
 ## Quick Start
@@ -16,8 +17,7 @@ Configure your Ubuntu server with DNS, mail, and multi-domain support in one com
 git clone https://github.com/vricosti/hibana-stack.git
 cd hibana-stack
 sudo ./setup.sh
-sudo ./bin/hibana init
-nano hibana-config.yaml
+nano hibana-config.yaml  # Configure your domain and settings
 sudo ./bin/hibana init
 ```
 
@@ -28,6 +28,12 @@ Edit `hibana-config.yaml`:
 ```yaml
 primary_domain: example.com
 server_ip: YOUR_SERVER_IP
+
+# DNS: "local" (PowerDNS) or "external" (Hostinger, OVH, Cloudflare)
+dns_provider:
+  type: external
+  name: hostinger
+  api_token: YOUR_API_TOKEN
 
 subdomains:
   - name: adm
@@ -50,12 +56,6 @@ webadmin:
 
 domain_user:
   ssh_key_mode: auto  # or "manual" with ssh_public_key
-
-# Optional: redirect other domains
-# domain_redirects:
-#   - from: example.fr
-#     to: https://example.com
-#     permanent: true
 ```
 
 ## What Gets Installed
@@ -77,17 +77,28 @@ Features:
 - DNS record editor
 - SSH key management for domain users
 
+## Adding Domains
+
+After initial setup, add more domains via the web admin or CLI:
+
+```bash
+# Prepare domain on server (creates user, directories, Traefik config)
+sudo hibana add domain newdomain.com
+
+# Then add via web admin at adm.yourdomain.com
+```
+
 ## Domain User
 
-A restricted system user is created for deploying apps:
+A restricted system user is created for each domain for deploying apps:
 
 ```bash
 # Deploy files
-scp -r dist/* user@server:/srv/yourdomain.com/www/src/
+scp -r dist/* user@server:/srv/yourdomain-com/www/src/
 
 # Restart containers
 ssh user@server
-cd /srv/yourdomain.com/www
+cd /srv/yourdomain-com/www
 sudo docker-compose up -d --build
 ```
 
