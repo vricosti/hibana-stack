@@ -21,6 +21,39 @@ func BuildAPIAndFrontend(workspaceDir string) error {
 		return fmt.Errorf("failed to create build directory: %w", err)
 	}
 
+	// Check if pre-built files exist in project root (from setup.sh)
+	prebuiltDir := filepath.Join(projectRoot, "ansible", "api-build")
+	prebuiltAPI := filepath.Join(prebuiltDir, "hibana-api")
+	prebuiltWeb := filepath.Join(prebuiltDir, "web")
+	prebuiltDockerfile := filepath.Join(prebuiltDir, "Dockerfile")
+
+	if _, err := os.Stat(prebuiltAPI); err == nil {
+		if _, err := os.Stat(prebuiltWeb); err == nil {
+			// Pre-built files exist, copy them instead of rebuilding
+			fmt.Println("  → Using pre-built API and frontend from setup.sh...")
+
+			// Copy API binary
+			if err := copyFile(prebuiltAPI, filepath.Join(buildDir, "hibana-api")); err != nil {
+				return fmt.Errorf("failed to copy pre-built API: %w", err)
+			}
+
+			// Copy web directory
+			if err := copyDir(prebuiltWeb, filepath.Join(buildDir, "web")); err != nil {
+				return fmt.Errorf("failed to copy pre-built frontend: %w", err)
+			}
+
+			// Copy Dockerfile if it exists
+			if _, err := os.Stat(prebuiltDockerfile); err == nil {
+				if err := copyFile(prebuiltDockerfile, filepath.Join(buildDir, "Dockerfile")); err != nil {
+					return fmt.Errorf("failed to copy pre-built Dockerfile: %w", err)
+				}
+			}
+
+			fmt.Println("    ✓ Pre-built API and frontend copied")
+			return nil
+		}
+	}
+
 	// Step 1: Build Go API binary (static for Alpine)
 	fmt.Println("  → Building Go API...")
 	apiBinary := filepath.Join(buildDir, "hibana-api")
@@ -108,4 +141,22 @@ CMD ["./hibana-api", "--port", "3000", "--static", "./web"]
 	fmt.Printf("    Build artifacts ready in: %s\n", buildDir)
 
 	return nil
+}
+
+// copyFile copies a single file from src to dst
+func copyFile(src, dst string) error {
+	// Read source file
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	// Get source file info for permissions
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	// Write to destination with same permissions
+	return os.WriteFile(dst, data, srcInfo.Mode())
 }
