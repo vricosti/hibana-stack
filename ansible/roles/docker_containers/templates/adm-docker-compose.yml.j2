@@ -31,11 +31,16 @@ services:
       - jwt_secret
     labels:
       - "traefik.enable=true"
+      # HTTP router for ACME challenges and redirect
+      - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}-http.rule=Host(`adm.{{ primary_domain }}`)"
+      - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}-http.entrypoints=web"
+      # HTTPS router
       - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}.rule=Host(`adm.{{ primary_domain }}`)"
       - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}.entrypoints=websecure"
       - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}.tls.certresolver=letsencrypt"
-      - "traefik.http.services.adm-{{ primary_domain | replace('.', '-') }}.loadbalancer.server.port=3000"
       - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}.middlewares=security-headers@file,rate-limit@file"
+      # Service configuration
+      - "traefik.http.services.adm-{{ primary_domain | replace('.', '-') }}.loadbalancer.server.port=3000"
 
 networks:
   traefik-network:

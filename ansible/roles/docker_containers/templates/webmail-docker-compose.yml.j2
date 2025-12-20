@@ -22,11 +22,16 @@ services:
       - "mail.{{ primary_domain }}:host-gateway"
     labels:
       - "traefik.enable=true"
+      # HTTP router for ACME challenges and redirect
+      - "traefik.http.routers.webmail-{{ primary_domain | replace('.', '-') }}-http.rule=Host(`webmail.{{ primary_domain }}`)"
+      - "traefik.http.routers.webmail-{{ primary_domain | replace('.', '-') }}-http.entrypoints=web"
+      # HTTPS router
       - "traefik.http.routers.webmail-{{ primary_domain | replace('.', '-') }}.rule=Host(`webmail.{{ primary_domain }}`)"
       - "traefik.http.routers.webmail-{{ primary_domain | replace('.', '-') }}.entrypoints=websecure"
       - "traefik.http.routers.webmail-{{ primary_domain | replace('.', '-') }}.tls.certresolver=letsencrypt"
-      - "traefik.http.services.webmail-{{ primary_domain | replace('.', '-') }}.loadbalancer.server.port=80"
       - "traefik.http.routers.webmail-{{ primary_domain | replace('.', '-') }}.middlewares=security-headers@file"
+      # Service configuration
+      - "traefik.http.services.webmail-{{ primary_domain | replace('.', '-') }}.loadbalancer.server.port=80"
 
 networks:
   traefik-network:
