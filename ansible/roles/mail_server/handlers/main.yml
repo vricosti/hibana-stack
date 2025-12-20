@@ -10,7 +10,4 @@
     state: restarted
 
 - name: Rebuild Postfix maps
-  command: postmap {{ item }}
-  loop:
-    - /etc/postfix/vmailbox
-    - /etc/postfix/virtual
+  command: postmap /etc/postfix/vmailbox
