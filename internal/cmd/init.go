@@ -12,6 +12,7 @@ import (
 	"github.com/vricosti/hibana-stack/internal/ansible"
 	"github.com/vricosti/hibana-stack/internal/config"
 	"github.com/vricosti/hibana-stack/internal/dnsprovider"
+	"github.com/vricosti/hibana-stack/internal/system"
 )
 
 const templateFileName = "hibana-config.skel.yaml"
@@ -287,6 +288,18 @@ func generateConfigFromTemplate(outputFile string) error {
 	content = re.ReplaceAllStringFunc(content, func(match string) string {
 		return generateRandomPassword(16)
 	})
+
+	// Try to detect and fill in the server IP address
+	if strings.Contains(content, "YOUR_SERVER_IP") {
+		serverIP, err := system.GetServerIP()
+		if err != nil {
+			fmt.Printf("⚠ Warning: Could not detect server IP address: %v\n", err)
+			fmt.Println("  Please manually update server_ip in the configuration file.")
+		} else {
+			content = strings.ReplaceAll(content, "YOUR_SERVER_IP", serverIP)
+			fmt.Printf("✓ Server IP address detected: %s\n", serverIP)
+		}
+	}
 
 	// Write to output file
 	if err := os.WriteFile(outputFile, []byte(content), 0600); err != nil {
