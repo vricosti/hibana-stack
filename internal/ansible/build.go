@@ -117,7 +117,7 @@ func BuildAPIAndFrontend(workspaceDir string) error {
 	// Step 3: Create Dockerfile for binary deployment
 	dockerfileContent := `FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates docker-cli docker-cli-compose
 
 WORKDIR /app
 
