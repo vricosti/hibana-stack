@@ -8,10 +8,14 @@ http:
           X-XSS-Protection: "1; mode=block"
           Referrer-Policy: "strict-origin-when-cross-origin"
           Permissions-Policy: "geolocation=(), microphone=(), camera=()"
-        sslRedirect: true
         stsSeconds: 31536000
         stsIncludeSubdomains: true
         stsPreload: true
+
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
 
     rate-limit:
       rateLimit:
