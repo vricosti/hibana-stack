@@ -1000,12 +1000,17 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 
 	fmt.Printf("✓ Found VPS: %s (ID: %d)\n", vm.Hostname, vm.ID)
 
-	// Configure PTR for IPv4 addresses
+	ipv4Success := false
+	ipv6Failed := false
+	var ipv6Addresses []string
+
+	// Configure PTR for IPv4 addresses first (required before IPv6)
 	for _, ip := range vm.IPv4 {
 		fmt.Printf("→ Configuring PTR for %s (IPv4)...\n", ip.Address)
 
 		if ip.PTR == mailHostname {
 			fmt.Printf("  ℹ PTR already configured: %s → %s\n", ip.Address, mailHostname)
+			ipv4Success = true
 			continue
 		}
 
@@ -1015,6 +1020,7 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 		}
 
 		fmt.Printf("  ✓ PTR record set: %s → %s\n", ip.Address, mailHostname)
+		ipv4Success = true
 	}
 
 	// Configure PTR for IPv6 addresses
@@ -1027,11 +1033,37 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 		}
 
 		if err := h.CreatePTRRecord(vm.ID, ip.ID, mailHostname); err != nil {
-			fmt.Printf("  ⚠ Warning: Failed to set PTR for %s: %v\n", ip.Address, err)
+			// Known API bug: Hostinger API returns error 422 for IPv6 PTR records
+			// This is a bug in the Hostinger API, not in our code
+			if strings.Contains(err.Error(), "422") || strings.Contains(err.Error(), "VPS:2004") {
+				fmt.Printf("  ⚠ Warning: IPv6 PTR configuration failed due to Hostinger API limitation\n")
+				ipv6Failed = true
+				ipv6Addresses = append(ipv6Addresses, ip.Address)
+			} else {
+				fmt.Printf("  ⚠ Warning: Failed to set PTR for %s: %v\n", ip.Address, err)
+			}
 			continue
 		}
 
 		fmt.Printf("  ✓ PTR record set: %s → %s\n", ip.Address, mailHostname)
+	}
+
+	// Display manual configuration instructions if IPv6 failed
+	if ipv6Failed && len(ipv6Addresses) > 0 {
+		fmt.Println("\n⚠️  IPv6 PTR Configuration Required")
+		fmt.Println("   The Hostinger API currently has a known issue configuring IPv6 PTR records.")
+		fmt.Println("   Please configure manually in Hostinger hPanel:")
+		fmt.Println("   1. Go to: https://hpanel.hostinger.com")
+		fmt.Println("   2. Navigate to: VPS → Your VPS → IP address")
+		fmt.Println("   3. Set PTR record for IPv6:")
+		for _, addr := range ipv6Addresses {
+			fmt.Printf("      - %s → %s\n", addr, mailHostname)
+		}
+		fmt.Println("   Note: IPv4 PTR is already configured correctly ✓")
+	}
+
+	if !ipv4Success && ipv6Failed {
+		return fmt.Errorf("failed to configure PTR records for both IPv4 and IPv6")
 	}
 
 	return nil

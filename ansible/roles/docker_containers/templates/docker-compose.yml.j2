@@ -26,9 +26,16 @@ services:
       - hibana-network
     labels:
       - "traefik.enable=true"
+      # HTTP router for ACME challenges and redirect
+      - "traefik.http.routers.www-http.rule=Host(`www.{{ primary_domain }}`, `{{ primary_domain }}`)"
+      - "traefik.http.routers.www-http.entrypoints=web"
+      - "traefik.http.routers.www-http.middlewares=https-redirect@file"
+      # HTTPS router
       - "traefik.http.routers.www.rule=Host(`www.{{ primary_domain }}`, `{{ primary_domain }}`)"
       - "traefik.http.routers.www.entrypoints=websecure"
       - "traefik.http.routers.www.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.www.middlewares=security-headers@file,compress@file"
+      # Service configuration
       - "traefik.http.services.www.loadbalancer.server.port=80"
 
   adm:
@@ -41,9 +48,16 @@ services:
       - DOMAIN={{ primary_domain }}
     labels:
       - "traefik.enable=true"
+      # HTTP router for ACME challenges and redirect
+      - "traefik.http.routers.adm-http.rule=Host(`adm.{{ primary_domain }}`)"
+      - "traefik.http.routers.adm-http.entrypoints=web"
+      - "traefik.http.routers.adm-http.middlewares=https-redirect@file"
+      # HTTPS router
       - "traefik.http.routers.adm.rule=Host(`adm.{{ primary_domain }}`)"
       - "traefik.http.routers.adm.entrypoints=websecure"
       - "traefik.http.routers.adm.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.adm.middlewares=security-headers@file,rate-limit@file"
+      # Service configuration
       - "traefik.http.services.adm.loadbalancer.server.port=80"
 
   webmail:
@@ -62,9 +76,16 @@ services:
       - ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=30M
     labels:
       - "traefik.enable=true"
+      # HTTP router for ACME challenges and redirect
+      - "traefik.http.routers.webmail-http.rule=Host(`webmail.{{ primary_domain }}`)"
+      - "traefik.http.routers.webmail-http.entrypoints=web"
+      - "traefik.http.routers.webmail-http.middlewares=https-redirect@file"
+      # HTTPS router
       - "traefik.http.routers.webmail.rule=Host(`webmail.{{ primary_domain }}`)"
       - "traefik.http.routers.webmail.entrypoints=websecure"
       - "traefik.http.routers.webmail.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.webmail.middlewares=security-headers@file"
+      # Service configuration
       - "traefik.http.services.webmail.loadbalancer.server.port=80"
 
 networks:
