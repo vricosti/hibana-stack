@@ -26,9 +26,10 @@ services:
       - hibana-network
     labels:
       - "traefik.enable=true"
-      # HTTP router for ACME challenges (no redirect to allow challenges)
-      - "traefik.http.routers.www-http.rule=Host(`www.{{ primary_domain }}`, `{{ primary_domain }}`)"
+      # HTTP router (exclude ACME challenges to let Traefik handle them)
+      - "traefik.http.routers.www-http.rule=(Host(`www.{{ primary_domain }}`) || Host(`{{ primary_domain }}`)) && !PathPrefix(`/.well-known/acme-challenge/`)"
       - "traefik.http.routers.www-http.entrypoints=web"
+      - "traefik.http.routers.www-http.priority=1"
       # HTTPS router
       - "traefik.http.routers.www.rule=Host(`www.{{ primary_domain }}`, `{{ primary_domain }}`)"
       - "traefik.http.routers.www.entrypoints=websecure"
@@ -47,9 +48,10 @@ services:
       - DOMAIN={{ primary_domain }}
     labels:
       - "traefik.enable=true"
-      # HTTP router for ACME challenges (no redirect to allow challenges)
-      - "traefik.http.routers.adm-http.rule=Host(`adm.{{ primary_domain }}`)"
+      # HTTP router (exclude ACME challenges to let Traefik handle them)
+      - "traefik.http.routers.adm-http.rule=Host(`adm.{{ primary_domain }}`) && !PathPrefix(`/.well-known/acme-challenge/`)"
       - "traefik.http.routers.adm-http.entrypoints=web"
+      - "traefik.http.routers.adm-http.priority=1"
       # HTTPS router
       - "traefik.http.routers.adm.rule=Host(`adm.{{ primary_domain }}`)"
       - "traefik.http.routers.adm.entrypoints=websecure"
@@ -74,9 +76,10 @@ services:
       - ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=30M
     labels:
       - "traefik.enable=true"
-      # HTTP router for ACME challenges (no redirect to allow challenges)
-      - "traefik.http.routers.webmail-http.rule=Host(`webmail.{{ primary_domain }}`)"
+      # HTTP router (exclude ACME challenges to let Traefik handle them)
+      - "traefik.http.routers.webmail-http.rule=Host(`webmail.{{ primary_domain }}`) && !PathPrefix(`/.well-known/acme-challenge/`)"
       - "traefik.http.routers.webmail-http.entrypoints=web"
+      - "traefik.http.routers.webmail-http.priority=1"
       # HTTPS router
       - "traefik.http.routers.webmail.rule=Host(`webmail.{{ primary_domain }}`)"
       - "traefik.http.routers.webmail.entrypoints=websecure"
