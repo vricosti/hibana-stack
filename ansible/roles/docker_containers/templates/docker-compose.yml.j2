@@ -31,7 +31,7 @@ services:
       - "traefik.http.routers.www-http.entrypoints=web"
       - "traefik.http.routers.www-http.priority=1"
       # HTTPS router
-      - "traefik.http.routers.www.rule=Host(`www.{{ primary_domain }}`, `{{ primary_domain }}`)"
+      - "traefik.http.routers.www.rule=Host(`www.{{ primary_domain }}`) || Host(`{{ primary_domain }}`)"
       - "traefik.http.routers.www.entrypoints=websecure"
       - "traefik.http.routers.www.tls.certresolver=letsencrypt"
       - "traefik.http.routers.www.middlewares=security-headers@file,compress@file"
