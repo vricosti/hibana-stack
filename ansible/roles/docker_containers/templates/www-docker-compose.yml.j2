@@ -14,10 +14,9 @@ services:
       - traefik-network
     labels:
       - "traefik.enable=true"
-      # HTTP router for ACME challenges and redirect
+      # HTTP router for ACME challenges (no redirect to allow challenges)
       - "traefik.http.routers.www-{{ primary_domain | replace('.', '-') }}-http.rule=Host(`www.{{ primary_domain }}`) || Host(`{{ primary_domain }}`)"
       - "traefik.http.routers.www-{{ primary_domain | replace('.', '-') }}-http.entrypoints=web"
-      - "traefik.http.routers.www-{{ primary_domain | replace('.', '-') }}-http.middlewares=https-redirect@file"
       # HTTPS router
       - "traefik.http.routers.www-{{ primary_domain | replace('.', '-') }}.rule=Host(`www.{{ primary_domain }}`) || Host(`{{ primary_domain }}`)"
       - "traefik.http.routers.www-{{ primary_domain | replace('.', '-') }}.entrypoints=websecure"

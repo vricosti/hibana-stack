@@ -31,10 +31,9 @@ services:
       - jwt_secret
     labels:
       - "traefik.enable=true"
-      # HTTP router for ACME challenges and redirect
+      # HTTP router for ACME challenges (no redirect to allow challenges)
       - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}-http.rule=Host(`adm.{{ primary_domain }}`)"
       - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}-http.entrypoints=web"
-      - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}-http.middlewares=https-redirect@file"
       # HTTPS router
       - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}.rule=Host(`adm.{{ primary_domain }}`)"
       - "traefik.http.routers.adm-{{ primary_domain | replace('.', '-') }}.entrypoints=websecure"
