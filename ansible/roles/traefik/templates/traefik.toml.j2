@@ -38,7 +38,7 @@
   [providers.docker]
     endpoint = "unix:///var/run/docker.sock"
     exposedByDefault = false
-    network = "hibana-network"
+    network = "traefik-network"
 
   [providers.file]
     directory = "/etc/traefik/config"
