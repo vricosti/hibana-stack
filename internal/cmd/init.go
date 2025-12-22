@@ -154,21 +154,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("Playbook copied")
 
-	// Step 9: Execute ansible-playbook
-	fmt.Println("\nExecuting Ansible playbook...")
-	fmt.Println(string(make([]byte, 80)))
-
-	if err := ansible.ExecutePlaybook(workspaceDir, verbose); err != nil {
-		fmt.Println("\n" + string(make([]byte, 80)))
-		fmt.Println("Ansible playbook execution failed!")
-		return fmt.Errorf("playbook execution failed: %w", err)
-	}
-
-	// Step 10: Configure DNS provider if specified (after successful installation)
+	// Step 8.5: Configure DNS records BEFORE starting containers (PRE-INSTALL)
 	if cfg.DNSProvider != nil && cfg.DNSProvider.Type != "manual" {
-		// Configure DNS for all domains
+		fmt.Println("\n" + string(make([]byte, 80)))
+		fmt.Println("STEP: DNS PRE-CONFIGURATION")
+		fmt.Println(string(make([]byte, 80)))
+
+		// Configure DNS for all domains (A and MX records only)
 		for _, domain := range cfg.Domains {
-			// Convert domain to dnsprovider.DomainConfig
 			domainCfg := dnsprovider.DomainConfig{
 				Name:       domain.Name,
 				Subdomains: make([]dnsprovider.SubdomainConfig, len(domain.Subdomains)),
@@ -180,17 +173,77 @@ func runInit(cmd *cobra.Command, args []string) error {
 				}
 			}
 
-			simulate := false
-			if err := dnsprovider.UpdateDNSRecords(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.APIToken, domainCfg, cfg.ServerIP, simulate); err != nil {
-				fmt.Printf("\nWarning: DNS provider configuration failed for %s: %v\n", domain.Name, err)
-				fmt.Printf("Please configure DNS records manually for %s\n", domain.Name)
+			if err := dnsprovider.UpdateDNSRecordsPreInstall(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.APIToken, domainCfg, cfg.ServerIP); err != nil {
+				return fmt.Errorf("DNS pre-install configuration failed for %s: %w\n\nPlease check your DNS provider settings and try again.", domain.Name, err)
+			}
+		}
+
+		// Step 8.6: Verify DNS propagation for all domains
+		fmt.Println("\n" + string(make([]byte, 80)))
+		fmt.Println("STEP: VERIFYING DNS PROPAGATION")
+		fmt.Println(string(make([]byte, 80)))
+		fmt.Println("\nWaiting for DNS records to propagate before starting containers...")
+		fmt.Println("This ensures SSL certificates can be generated successfully.\n")
+
+		for _, domain := range cfg.Domains {
+			domainCfg := dnsprovider.DomainConfig{
+				Name:       domain.Name,
+				Subdomains: make([]dnsprovider.SubdomainConfig, len(domain.Subdomains)),
+			}
+			for i, sub := range domain.Subdomains {
+				domainCfg.Subdomains[i] = dnsprovider.SubdomainConfig{
+					Name: sub.Name,
+					Role: sub.Role,
+				}
+			}
+
+			// Wait up to 10 minutes (60 attempts × 10 seconds)
+			if err := dnsprovider.VerifyDNSPropagation(domainCfg, cfg.ServerIP, 60, 10); err != nil {
+				return fmt.Errorf("DNS propagation verification failed: %w", err)
+			}
+		}
+
+		fmt.Println("\n" + string(make([]byte, 80)))
+	}
+
+	// Step 9: Execute ansible-playbook (NOW that DNS is propagated)
+	fmt.Println("\nExecuting Ansible playbook...")
+	fmt.Println(string(make([]byte, 80)))
+
+	if err := ansible.ExecutePlaybook(workspaceDir, verbose); err != nil {
+		fmt.Println("\n" + string(make([]byte, 80)))
+		fmt.Println("Ansible playbook execution failed!")
+		return fmt.Errorf("playbook execution failed: %w", err)
+	}
+
+	// Step 10: Configure remaining DNS records (POST-INSTALL)
+	if cfg.DNSProvider != nil && cfg.DNSProvider.Type != "manual" {
+		fmt.Println("\n" + string(make([]byte, 80)))
+		fmt.Println("STEP: DNS POST-CONFIGURATION")
+		fmt.Println(string(make([]byte, 80)))
+
+		// Configure SPF and DMARC records for all domains
+		for _, domain := range cfg.Domains {
+			domainCfg := dnsprovider.DomainConfig{
+				Name:       domain.Name,
+				Subdomains: make([]dnsprovider.SubdomainConfig, len(domain.Subdomains)),
+			}
+			for i, sub := range domain.Subdomains {
+				domainCfg.Subdomains[i] = dnsprovider.SubdomainConfig{
+					Name: sub.Name,
+					Role: sub.Role,
+				}
+			}
+
+			if err := dnsprovider.UpdateDNSRecordsPostInstall(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.APIToken, domainCfg, cfg.ServerIP); err != nil {
+				fmt.Printf("\n⚠ Warning: DNS post-install configuration failed for %s: %v\n", domain.Name, err)
 			}
 		}
 
 		// Configure PTR records if mailserver role is enabled on primary domain
 		if primaryDomain.HasSubdomainRole("mailserver") {
 			if err := dnsprovider.ConfigurePTR(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.ServerIP, primaryDomain.Name); err != nil {
-				fmt.Printf("\nWarning: PTR configuration failed: %v\n", err)
+				fmt.Printf("\n⚠ Warning: PTR configuration failed: %v\n", err)
 			}
 		}
 
