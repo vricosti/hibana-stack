@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
+	"time"
 )
 
 const (
@@ -1195,4 +1197,388 @@ func ReadDKIMPublicKey(domain string) (string, error) {
 	}
 
 	return strings.TrimSpace(keyPart), nil
+}
+
+// ============================================================================
+// Pre-Install and Post-Install DNS Configuration
+// ============================================================================
+
+// UpdateDNSRecordsPreInstall configures DNS records BEFORE Ansible playbook execution
+// This includes A records and MX records (needed for SSL certificate generation)
+// SPF, DMARC, and DKIM records are added later in UpdateDNSRecordsPostInstall
+func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, domainCfg DomainConfig, serverIP string) error {
+	if providerName == "" || apiToken == "" {
+		return nil
+	}
+
+	providerName = strings.ToLower(strings.TrimSpace(providerName))
+	domain := domainCfg.Name
+
+	fmt.Printf("\n🌐 [PRE-INSTALL] Configuring DNS for %s (type: %s)...\n", domain, providerType)
+
+	switch providerName {
+	case "hostinger":
+		provider := NewHostingerProvider(apiToken)
+
+		// Fetch and display current configuration
+		fmt.Println("→ Fetching current DNS configuration...")
+		existingRecords, err := provider.getRecords(domain)
+		if err != nil {
+			fmt.Printf("  ⚠ Warning: Could not fetch existing records: %v\n", err)
+		} else {
+			fmt.Println("\n  Current DNS Records:")
+			if len(existingRecords) == 0 {
+				fmt.Println("    (no records found)")
+			} else {
+				for _, r := range existingRecords {
+					name := r.Name
+					if name == "" || name == "@" {
+						name = domain
+					} else {
+						name = name + "." + domain
+					}
+					fmt.Printf("    %-35s %-6s %5d  %s\n", name, r.Type, r.TTL, r.Content)
+				}
+			}
+		}
+
+		var recordsToCreate []HostingerRecord
+
+		if providerType == "local" {
+			// Local DNS (PowerDNS) - create NS records and update nameservers
+			fmt.Println("\n→ Configuring NS records for local PowerDNS...")
+			if err := provider.EnsureNSRecords(domain, serverIP); err != nil {
+				return fmt.Errorf("failed to configure NS records: %w", err)
+			}
+
+			fmt.Println("→ Updating domain nameservers...")
+			if err := provider.UpdateNameservers(domain); err != nil {
+				return fmt.Errorf("failed to update nameservers: %w", err)
+			}
+		} else if providerType == "external" {
+			// External DNS - reset nameservers and add A/MX records only
+			fmt.Println("\n→ Resetting nameservers to Hostinger defaults...")
+			if err := provider.ResetNameserversToDefault(domain); err != nil {
+				fmt.Printf("  ⚠ Warning: Could not reset nameservers: %v\n", err)
+			}
+
+			fmt.Println("→ Configuring DNS records (A and MX only)...")
+
+			// Build map of existing records
+			existingByNameType := make(map[string]HostingerRecord)
+			for _, r := range existingRecords {
+				key := fmt.Sprintf("%s:%s", r.Name, r.Type)
+				existingByNameType[key] = r
+			}
+
+			// Helper function
+			shouldSkip := func(name, recordType string) (bool, string) {
+				key := fmt.Sprintf("%s:%s", name, recordType)
+				if existing, ok := existingByNameType[key]; ok {
+					if existing.Content == serverIP || (recordType == "MX" && strings.Contains(existing.Content, fmt.Sprintf("mail.%s", domain))) {
+						return true, "already exists with correct value"
+					}
+					return false, ""
+				}
+				if recordType == "A" {
+					cnameKey := fmt.Sprintf("%s:CNAME", name)
+					if _, ok := existingByNameType[cnameKey]; ok {
+						return true, "CNAME exists, skipping A record"
+					}
+				}
+				return false, ""
+			}
+
+			// A record for root domain
+			if skip, reason := shouldSkip("@", "A"); skip {
+				fmt.Printf("  ℹ %s A: %s\n", domain, reason)
+			} else {
+				recordsToCreate = append(recordsToCreate, HostingerRecord{
+					Type:    "A",
+					Name:    "@",
+					Content: serverIP,
+					TTL:     300,
+				})
+			}
+
+			// A records for subdomains
+			for _, sub := range domainCfg.Subdomains {
+				if skip, reason := shouldSkip(sub.Name, "A"); skip {
+					fmt.Printf("  ℹ %s.%s A: %s\n", sub.Name, domain, reason)
+				} else {
+					recordsToCreate = append(recordsToCreate, HostingerRecord{
+						Type:    "A",
+						Name:    sub.Name,
+						Content: serverIP,
+						TTL:     300,
+					})
+				}
+			}
+
+			// MX record if mailserver role exists
+			hasMailserver := false
+			for _, sub := range domainCfg.Subdomains {
+				if sub.Role == "mailserver" {
+					hasMailserver = true
+					break
+				}
+			}
+
+			if hasMailserver {
+				mxContent := fmt.Sprintf("10 mail.%s", domain)
+				if skip, reason := shouldSkip("@", "MX"); skip {
+					fmt.Printf("  ℹ %s MX: %s\n", domain, reason)
+				} else {
+					recordsToCreate = append(recordsToCreate, HostingerRecord{
+						Type:    "MX",
+						Name:    "@",
+						Content: mxContent,
+						TTL:     14400,
+					})
+				}
+			}
+
+			// Create records
+			if len(recordsToCreate) > 0 {
+				fmt.Println("\n  Creating/updating DNS records:")
+				for _, r := range recordsToCreate {
+					name := r.Name
+					if name == "@" {
+						name = domain
+					} else {
+						name = name + "." + domain
+					}
+
+					var err error
+					if r.Type == "A" {
+						err = provider.replaceRecords(domain, []HostingerRecord{r})
+					} else {
+						err = provider.updateRecords(domain, []HostingerRecord{r})
+					}
+
+					if err != nil {
+						fmt.Printf("    ✗ %s %s %s - %v\n", name, r.Type, r.Content, err)
+					} else {
+						fmt.Printf("    ✓ %s %s %s\n", name, r.Type, r.Content)
+					}
+				}
+			} else {
+				fmt.Println("  ℹ All DNS records already configured correctly")
+			}
+		}
+
+		fmt.Println("\n✓ [PRE-INSTALL] DNS configured - waiting for propagation...")
+		return nil
+
+	default:
+		return fmt.Errorf("unsupported DNS provider: %s", providerName)
+	}
+}
+
+// UpdateDNSRecordsPostInstall configures SPF and DMARC records AFTER Ansible playbook execution
+// This is called after the mail server is configured
+func UpdateDNSRecordsPostInstall(providerName, providerType, apiToken string, domainCfg DomainConfig, serverIP string) error {
+	if providerName == "" || apiToken == "" || providerType != "external" {
+		return nil
+	}
+
+	providerName = strings.ToLower(strings.TrimSpace(providerName))
+	domain := domainCfg.Name
+
+	// Check if mailserver role exists
+	hasMailserver := false
+	for _, sub := range domainCfg.Subdomains {
+		if sub.Role == "mailserver" {
+			hasMailserver = true
+			break
+		}
+	}
+
+	if !hasMailserver {
+		return nil
+	}
+
+	fmt.Printf("\n🌐 [POST-INSTALL] Configuring mail DNS records for %s...\n", domain)
+
+	switch providerName {
+	case "hostinger":
+		provider := NewHostingerProvider(apiToken)
+
+		existingRecords, err := provider.getRecords(domain)
+		if err != nil {
+			fmt.Printf("  ⚠ Warning: Could not fetch existing records: %v\n", err)
+			existingRecords = []HostingerRecord{}
+		}
+
+		var recordsToCreate []HostingerRecord
+
+		// Check SPF record
+		spfContent := fmt.Sprintf("v=spf1 ip4:%s -all", serverIP)
+		hasSPF := false
+		for _, r := range existingRecords {
+			if r.Type == "TXT" && r.Name == "@" && strings.HasPrefix(r.Content, "v=spf1") {
+				hasSPF = true
+				if strings.Contains(r.Content, serverIP) {
+					fmt.Printf("  ℹ %s SPF: already configured\n", domain)
+				} else {
+					fmt.Printf("  ⚠ %s SPF: exists but doesn't include %s, please update manually\n", domain, serverIP)
+				}
+				break
+			}
+		}
+		if !hasSPF {
+			recordsToCreate = append(recordsToCreate, HostingerRecord{
+				Type:    "TXT",
+				Name:    "@",
+				Content: spfContent,
+				TTL:     14400,
+			})
+		}
+
+		// Check DMARC record
+		dmarcContent := fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", domain)
+		hasDMARC := false
+		for _, r := range existingRecords {
+			if r.Type == "TXT" && r.Name == "_dmarc" {
+				hasDMARC = true
+				fmt.Printf("  ℹ %s DMARC: already configured\n", domain)
+				break
+			}
+		}
+		if !hasDMARC {
+			recordsToCreate = append(recordsToCreate, HostingerRecord{
+				Type:    "TXT",
+				Name:    "_dmarc",
+				Content: dmarcContent,
+				TTL:     3600,
+			})
+		}
+
+		// Create records
+		if len(recordsToCreate) > 0 {
+			fmt.Println("\n  Creating mail DNS records:")
+			for _, r := range recordsToCreate {
+				name := r.Name
+				if name == "@" {
+					name = domain
+				} else {
+					name = name + "." + domain
+				}
+
+				if err := provider.updateRecords(domain, []HostingerRecord{r}); err != nil {
+					fmt.Printf("    ✗ %s %s - %v\n", name, r.Type, err)
+				} else {
+					fmt.Printf("    ✓ %s %s\n", name, r.Type)
+				}
+			}
+		} else {
+			fmt.Println("  ℹ All mail DNS records already configured")
+		}
+
+		fmt.Println("\n✓ [POST-INSTALL] Mail DNS records configured")
+		return nil
+
+	default:
+		return fmt.Errorf("unsupported DNS provider: %s", providerName)
+	}
+}
+
+// VerifyDNSPropagation verifies that all DNS records have propagated for a domain
+// It checks the root domain and all subdomains to ensure they resolve to the server IP
+// Returns nil if all records are propagated, or an error with details
+func VerifyDNSPropagation(domainCfg DomainConfig, serverIP string, maxRetries int, delaySeconds int) error {
+	domain := domainCfg.Name
+
+	fmt.Printf("\n🔍 Verifying DNS propagation for %s...\n", domain)
+	fmt.Printf("   Server IP: %s\n", serverIP)
+	fmt.Printf("   Max attempts: %d (checking every %d seconds)\n\n", maxRetries, delaySeconds)
+
+	// Build list of FQDNs to check
+	var fqdnsToCheck []string
+
+	// Add root domain
+	fqdnsToCheck = append(fqdnsToCheck, domain)
+
+	// Add all subdomains
+	for _, sub := range domainCfg.Subdomains {
+		fqdnsToCheck = append(fqdnsToCheck, fmt.Sprintf("%s.%s", sub.Name, domain))
+	}
+
+	// Track which domains are not yet propagated
+	pendingDomains := make(map[string]bool)
+	for _, fqdn := range fqdnsToCheck {
+		pendingDomains[fqdn] = true
+	}
+
+	// Retry loop
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if attempt > 1 {
+			fmt.Printf("\n⏳ Attempt %d/%d - Checking DNS propagation...\n", attempt, maxRetries)
+		}
+
+		// Check each pending domain
+		for fqdn := range pendingDomains {
+			resolved, err := checkDNSRecord(fqdn, serverIP)
+			if err != nil {
+				fmt.Printf("   ⚠ %s: %v\n", fqdn, err)
+				continue
+			}
+
+			if resolved {
+				fmt.Printf("   ✓ %s → %s\n", fqdn, serverIP)
+				delete(pendingDomains, fqdn)
+			} else {
+				fmt.Printf("   ⏱ %s: waiting for propagation...\n", fqdn)
+			}
+		}
+
+		// If all domains are resolved, we're done
+		if len(pendingDomains) == 0 {
+			fmt.Printf("\n✓ DNS propagation complete! All %d records verified.\n", len(fqdnsToCheck))
+			return nil
+		}
+
+		// If not the last attempt, wait before retrying
+		if attempt < maxRetries {
+			fmt.Printf("\n   Waiting %d seconds before retry...\n", delaySeconds)
+			time.Sleep(time.Duration(delaySeconds) * time.Second)
+		}
+	}
+
+	// If we get here, some domains didn't propagate in time
+	var pendingList []string
+	for fqdn := range pendingDomains {
+		pendingList = append(pendingList, fqdn)
+	}
+
+	return fmt.Errorf("DNS propagation timeout: %d domain(s) did not propagate after %d attempts:\n  - %s\n\nPlease verify your DNS configuration and try again.",
+		len(pendingList),
+		maxRetries,
+		strings.Join(pendingList, "\n  - "))
+}
+
+// checkDNSRecord checks if a FQDN resolves to the expected IP address
+func checkDNSRecord(fqdn, expectedIP string) (bool, error) {
+	cmd := exec.Command("dig", "+short", fqdn, "A")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("dig command failed: %w", err)
+	}
+
+	// Parse output - dig returns one IP per line
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		return false, nil // No DNS record found yet
+	}
+
+	// Check if any of the returned IPs match our expected IP
+	for _, ip := range lines {
+		ip = strings.TrimSpace(ip)
+		if ip == expectedIP {
+			return true, nil
+		}
+	}
+
+	// DNS record exists but points to wrong IP
+	return false, fmt.Errorf("resolves to %s, expected %s", strings.Join(lines, ", "), expectedIP)
 }
