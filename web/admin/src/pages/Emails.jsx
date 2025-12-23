@@ -33,7 +33,9 @@ export default function Emails() {
       setEmails(emailsRes.data.data || []);
       setAliases(aliasesRes.data.data || []);
     } catch (err) {
-      setError('Failed to load emails');
+      // Display detailed error message from API response
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to load emails';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -66,7 +68,8 @@ export default function Emails() {
       await emailAPI.delete(email.id);
       loadData();
     } catch (err) {
-      alert('Failed to delete email account');
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to delete email account';
+      alert(errorMessage);
     }
   };
 
@@ -77,7 +80,8 @@ export default function Emails() {
       await aliasAPI.delete(alias.id);
       loadData();
     } catch (err) {
-      alert('Failed to delete redirect');
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to delete redirect';
+      alert(errorMessage);
     }
   };
 

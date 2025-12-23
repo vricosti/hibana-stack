@@ -8,6 +8,7 @@ import (
 	"github.com/vricosti/hibana-stack/internal/api/models"
 	"github.com/vricosti/hibana-stack/internal/dnsprovider"
 	"github.com/vricosti/hibana-stack/internal/installer"
+	"github.com/vricosti/hibana-stack/internal/utils"
 )
 
 // DomainService handles domain-related operations
@@ -51,6 +52,8 @@ func (s *DomainService) GetAll() ([]models.Domain, error) {
 		if username.Valid {
 			d.Username = username.String
 		}
+		// Calculate display name (shows "tiéuntigre.fr (xn--tiuntigre-c4a.fr)" for IDN domains)
+		d.DisplayName = utils.DomainDisplayName(d.Name)
 		domains = append(domains, d)
 	}
 
@@ -70,6 +73,9 @@ func (s *DomainService) GetByID(id int) (*models.Domain, error) {
 		return nil, fmt.Errorf("failed to query domain: %w", err)
 	}
 
+	// Calculate display name
+	d.DisplayName = utils.DomainDisplayName(d.Name)
+
 	return &d, nil
 }
 
@@ -85,6 +91,9 @@ func (s *DomainService) GetByName(name string) (*models.Domain, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query domain: %w", err)
 	}
+
+	// Calculate display name
+	d.DisplayName = utils.DomainDisplayName(d.Name)
 
 	return &d, nil
 }

@@ -159,6 +159,40 @@ func (s *DNSProviderService) Create(create *DNSProviderCreate) (*DNSProvider, er
 	return s.GetByID(id)
 }
 
+// Update updates an existing DNS provider
+func (s *DNSProviderService) Update(id int, update *DNSProviderCreate) (*DNSProvider, error) {
+	// Check if provider exists
+	_, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `UPDATE dns_providers
+	          SET name = $1, type = $2, provider = $3, api_token = $4, endpoint = $5,
+	              application_key = $6, application_secret = $7, consumer_key = $8, updated_at = CURRENT_TIMESTAMP
+	          WHERE id = $9`
+
+	_, err = s.db.Exec(query,
+		update.Name,
+		update.Type,
+		update.Provider,
+		nullString(update.APIToken),
+		nullString(update.Endpoint),
+		nullString(update.ApplicationKey),
+		nullString(update.ApplicationSecret),
+		nullString(update.ConsumerKey),
+		id,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update dns provider: %w", err)
+	}
+
+	// Update the global configuration
+	s.updateConfigTable(update.Type, update.Provider)
+
+	return s.GetByID(id)
+}
+
 // Delete deletes a DNS provider
 func (s *DNSProviderService) Delete(id int) error {
 	query := `DELETE FROM dns_providers WHERE id = $1`

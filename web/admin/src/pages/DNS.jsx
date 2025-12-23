@@ -24,8 +24,11 @@ export default function DNS() {
       setLoading(true);
       const response = await dnsAPI.getByDomain(currentDomain.id);
       setDnsRecords(response.data.data || []);
+      setError(''); // Clear any previous errors
     } catch (err) {
-      setError('Failed to load DNS records');
+      // Display detailed error message from API response
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to load DNS records';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

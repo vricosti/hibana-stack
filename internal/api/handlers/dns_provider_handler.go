@@ -54,6 +54,8 @@ func (h *DNSProviderHandler) HandleProvider(w http.ResponseWriter, r *http.Reque
 	switch r.Method {
 	case http.MethodGet:
 		h.Get(w, r, id)
+	case http.MethodPut:
+		h.Update(w, r, id)
 	case http.MethodDelete:
 		h.Delete(w, r, id)
 	default:
@@ -142,6 +144,51 @@ func (h *DNSProviderHandler) Create(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, models.APIResponse{
 		Success: true,
 		Message: "DNS provider created successfully",
+		Data:    provider,
+	})
+}
+
+// Update updates an existing DNS provider
+func (h *DNSProviderHandler) Update(w http.ResponseWriter, r *http.Request, id int) {
+	var update services.DNSProviderCreate
+	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Validate required fields
+	if update.Name == "" {
+		respondError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if update.Provider == "" {
+		respondError(w, http.StatusBadRequest, "provider is required")
+		return
+	}
+
+	// Test connection if credentials changed
+	if update.APIToken != "" || update.ApplicationKey != "" {
+		if err := h.service.TestConnection(&update); err != nil {
+			respondError(w, http.StatusBadRequest, "connection test failed: "+err.Error())
+			return
+		}
+	}
+
+	provider, err := h.service.Update(id, &update)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Mask sensitive data
+	provider.APIToken = maskString(provider.APIToken)
+	provider.ApplicationKey = maskString(provider.ApplicationKey)
+	provider.ApplicationSecret = maskString(provider.ApplicationSecret)
+	provider.ConsumerKey = maskString(provider.ConsumerKey)
+
+	respondJSON(w, http.StatusOK, models.APIResponse{
+		Success: true,
+		Message: "DNS provider updated successfully",
 		Data:    provider,
 	})
 }

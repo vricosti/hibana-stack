@@ -4,12 +4,13 @@ import "time"
 
 // Domain represents a domain in the system
 type Domain struct {
-	ID        int       `json:"id"`
-	Name      string    `json:"name"`
-	ServerIP  string    `json:"server_ip"`
-	Username  string    `json:"username,omitempty"` // Domain user username (from domain_users table)
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          int       `json:"id"`
+	Name        string    `json:"name"`         // Internal name (always stored as entered, may be Unicode or Punycode)
+	DisplayName string    `json:"display_name"` // User-friendly display name (Unicode + Punycode for IDN)
+	ServerIP    string    `json:"server_ip"`
+	Username    string    `json:"username,omitempty"` // Domain user username (from domain_users table)
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // DomainCreate represents the data needed to create a new domain

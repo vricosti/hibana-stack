@@ -877,7 +877,12 @@ func UpdateDNSRecords(providerName, providerType, apiToken string, domainCfg Dom
 				}
 
 				// Check DMARC record
-				dmarcContent := fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", domain)
+				// Convert domain to Punycode for email address in DMARC record (RFC compliance)
+				domainASCII, err := toPunycode(domain)
+				if err != nil {
+					domainASCII = domain // Fallback to original if conversion fails
+				}
+				dmarcContent := fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", domainASCII)
 				if _, ok := existingByNameType["_dmarc:TXT"]; ok {
 					fmt.Printf("  ℹ %s DMARC: already configured\n", domain)
 				} else {
@@ -1020,10 +1025,16 @@ func (h *HostingerProvider) FindVMByIP(serverIP string) (*VirtualMachine, *IPAdd
 
 // CreatePTRRecord creates or updates a PTR record for a VPS IP address
 func (h *HostingerProvider) CreatePTRRecord(vmID int, ipAddressID int, domain string) error {
+	// Convert domain to Punycode for API compatibility
+	domainASCII, err := toPunycode(domain)
+	if err != nil {
+		return fmt.Errorf("invalid domain name for PTR record: %w", err)
+	}
+
 	url := fmt.Sprintf("%s/virtual-machines/%d/ptr/%d", hostingerVPSAPIURL, vmID, ipAddressID)
 
 	payload := map[string]string{
-		"domain": domain,
+		"domain": domainASCII,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -1064,6 +1075,11 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 
 	fmt.Printf("✓ Found VPS: %s (ID: %d)\n", vm.Hostname, vm.ID)
 
+	mailHostnameASCII, err := toPunycode(mailHostname)
+	if err != nil {
+		mailHostnameASCII = mailHostname // Should not happen, but fallback
+	}
+
 	ipv4Success := false
 	ipv6Failed := false
 	var ipv6Addresses []string
@@ -1072,8 +1088,8 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 	for _, ip := range vm.IPv4 {
 		fmt.Printf("→ Configuring PTR for %s (IPv4)...\n", ip.Address)
 
-		if ip.PTR == mailHostname {
-			fmt.Printf("  ℹ PTR already configured: %s → %s\n", ip.Address, mailHostname)
+		if ip.PTR == mailHostname || ip.PTR == mailHostnameASCII {
+			fmt.Printf("  ℹ PTR already configured: %s → %s\n", ip.Address, ip.PTR)
 			ipv4Success = true
 			continue
 		}
@@ -1083,7 +1099,7 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 			continue
 		}
 
-		fmt.Printf("  ✓ PTR record set: %s → %s\n", ip.Address, mailHostname)
+		fmt.Printf("  ✓ PTR record set: %s → %s\n", ip.Address, mailHostnameASCII)
 		ipv4Success = true
 	}
 
@@ -1091,8 +1107,8 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 	for _, ip := range vm.IPv6 {
 		fmt.Printf("→ Configuring PTR for %s (IPv6)...\n", ip.Address)
 
-		if ip.PTR == mailHostname {
-			fmt.Printf("  ℹ PTR already configured: %s → %s\n", ip.Address, mailHostname)
+		if ip.PTR == mailHostname || ip.PTR == mailHostnameASCII {
+			fmt.Printf("  ℹ PTR already configured: %s → %s\n", ip.Address, ip.PTR)
 			continue
 		}
 
@@ -1109,7 +1125,7 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 			continue
 		}
 
-		fmt.Printf("  ✓ PTR record set: %s → %s\n", ip.Address, mailHostname)
+		fmt.Printf("  ✓ PTR record set: %s → %s\n", ip.Address, mailHostnameASCII)
 	}
 
 	// Display manual configuration instructions if IPv6 failed
@@ -1121,7 +1137,10 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 		fmt.Println("   2. Navigate to: VPS → Your VPS → IP address")
 		fmt.Println("   3. Set PTR record for IPv6:")
 		for _, addr := range ipv6Addresses {
-			fmt.Printf("      - %s → %s\n", addr, mailHostname)
+			fmt.Printf("      - %s → %s\n", addr, mailHostnameASCII)
+		}
+		if mailHostname != mailHostnameASCII {
+			fmt.Printf("     (Note: use the Punycode value: %s)\n", mailHostnameASCII)
 		}
 		fmt.Println("   Note: IPv4 PTR is already configured correctly ✓")
 	}
@@ -1154,10 +1173,17 @@ func ConfigurePTR(providerName, apiToken, serverIP, domain string) error {
 		provider := NewHostingerProvider(apiToken)
 		if err := provider.ConfigurePTRRecords(serverIP, mailHostname); err != nil {
 			fmt.Printf("⚠ Warning: PTR configuration failed: %v\n", err)
+
+			mailHostnameASCII, _ := toPunycode(mailHostname)
+
 			fmt.Println("\n⚠️  Please configure PTR records manually in Hostinger hPanel:")
 			fmt.Println("    → VPS Settings → IP address → Set PTR record")
-			fmt.Printf("    → IPv4: %s\n", mailHostname)
-			fmt.Printf("    → IPv6: %s\n", mailHostname)
+			if mailHostname != mailHostnameASCII {
+				fmt.Printf("    → For both IPv4 and IPv6, use the value: %s\n", mailHostnameASCII)
+			} else {
+				fmt.Printf("    → IPv4: %s\n", mailHostname)
+				fmt.Printf("    → IPv6: %s\n", mailHostname)
+			}
 			return nil // Don't fail the installation
 		}
 		fmt.Println("✓ PTR records configured successfully")
@@ -1225,7 +1251,12 @@ func AddDKIMRecord(providerName, apiToken, domain, dkimPublicKey string) error {
 
 // ReadDKIMPublicKey reads the DKIM public key from the OpenDKIM key file
 func ReadDKIMPublicKey(domain string) (string, error) {
-	keyFile := fmt.Sprintf("/etc/opendkim/keys/%s/default.txt", domain)
+	// Convert domain to punycode for filesystem path compatibility
+	domainASCII, err := toPunycode(domain)
+	if err != nil {
+		return "", fmt.Errorf("invalid domain name for DKIM key lookup: %w", err)
+	}
+	keyFile := fmt.Sprintf("/etc/opendkim/keys/%s/default.txt", domainASCII)
 
 	content, err := os.ReadFile(keyFile)
 	if err != nil {
@@ -1498,7 +1529,12 @@ func UpdateDNSRecordsPostInstall(providerName, providerType, apiToken string, do
 		}
 
 		// Check DMARC record
-		dmarcContent := fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", domain)
+		// Convert domain to Punycode for email address in DMARC record (RFC compliance)
+		domainASCII, err := toPunycode(domain)
+		if err != nil {
+			domainASCII = domain // Fallback to original if conversion fails
+		}
+		dmarcContent := fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", domainASCII)
 		hasDMARC := false
 		for _, r := range existingRecords {
 			if r.Type == "TXT" && r.Name == "_dmarc" {

@@ -14,6 +14,7 @@ const formatProviderName = (name) => {
 
 export default function DNSProviders() {
   const [showProviderModal, setShowProviderModal] = useState(false);
+  const [editingProvider, setEditingProvider] = useState(null);
   const [error, setError] = useState('');
   const [deletingProvider, setDeletingProvider] = useState(null);
   const [dnsProviders, setDnsProviders] = useState([]);
@@ -37,7 +38,9 @@ export default function DNSProviders() {
       }
     } catch (err) {
       console.error('Failed to load DNS providers:', err);
-      setError('Failed to load DNS providers');
+      // Display detailed error message from API response
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to load DNS providers';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -50,13 +53,27 @@ export default function DNSProviders() {
       setAvailableDomains(domains || []);
     } catch (err) {
       console.error('Failed to load available domains:', err);
+      // Display detailed error message from API response
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to load available domains';
+      setError(errorMessage);
     } finally {
       setLoadingDomains(false);
     }
   };
 
+  const handleAddProvider = () => {
+    setEditingProvider(null);
+    setShowProviderModal(true);
+  };
+
+  const handleEditProvider = (provider) => {
+    setEditingProvider(provider);
+    setShowProviderModal(true);
+  };
+
   const handleProviderModalClose = (refresh) => {
     setShowProviderModal(false);
+    setEditingProvider(null);
     if (refresh) {
       loadProviders();
     }
@@ -88,7 +105,7 @@ export default function DNSProviders() {
     <div>
       <div className="page-header">
         <h2>DNS Providers</h2>
-        <button className="btn btn-primary" onClick={() => setShowProviderModal(true)}>
+        <button className="btn btn-primary" onClick={handleAddProvider}>
           Add Provider
         </button>
       </div>
@@ -120,6 +137,16 @@ export default function DNSProviders() {
                   <td>{new Date(provider.created_at).toLocaleDateString()}</td>
                   <td>
                     <div className="table-actions">
+                      <button
+                        className="btn-icon"
+                        onClick={(e) => { e.stopPropagation(); handleEditProvider(provider); }}
+                        title="Edit"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </button>
                       <button
                         className="btn-icon btn-icon-danger"
                         onClick={(e) => handleDeleteProvider(e, provider)}
@@ -163,7 +190,16 @@ export default function DNSProviders() {
           </div>
 
           {loadingDomains ? (
-            <div className="loading"><div className="spinner"></div></div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '40px',
+              gap: '10px'
+            }}>
+              <div className="spinner"></div>
+              <span style={{ color: '#666' }}>Loading domains from Hostinger...</span>
+            </div>
           ) : availableDomains.length > 0 ? (
             <div className="table-container">
               <table className="table">
@@ -262,7 +298,10 @@ export default function DNSProviders() {
       )}
 
       {showProviderModal && (
-        <DNSProviderModal onClose={handleProviderModalClose} />
+        <DNSProviderModal
+          provider={editingProvider}
+          onClose={handleProviderModalClose}
+        />
       )}
     </div>
   );
