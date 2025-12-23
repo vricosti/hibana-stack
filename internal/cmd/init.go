@@ -13,6 +13,7 @@ import (
 	"github.com/vricosti/hibana-stack/internal/config"
 	"github.com/vricosti/hibana-stack/internal/dnsprovider"
 	"github.com/vricosti/hibana-stack/internal/system"
+	"golang.org/x/net/idna"
 )
 
 const templateFileName = "hibana-config.skel.yaml"
@@ -186,8 +187,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("This ensures SSL certificates can be generated successfully.\n")
 
 		for _, domain := range cfg.Domains {
+			// Convert domain to Punycode for DNS verification
+			domainASCII, err := idna.ToASCII(domain.Name)
+			if err != nil {
+				return fmt.Errorf("invalid domain name %s: %w", domain.Name, err)
+			}
+
 			domainCfg := dnsprovider.DomainConfig{
-				Name:       domain.Name,
+				Name:       domainASCII, // Use Punycode version for DNS queries
 				Subdomains: make([]dnsprovider.SubdomainConfig, len(domain.Subdomains)),
 			}
 			for i, sub := range domain.Subdomains {

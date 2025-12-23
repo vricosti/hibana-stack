@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"golang.org/x/net/idna"
 )
 
 const (
@@ -30,6 +32,18 @@ func NewHostingerProvider(apiToken string) *HostingerProvider {
 		apiToken: apiToken,
 		client:   &http.Client{},
 	}
+}
+
+// toPunycode converts an internationalized domain name (IDN) to ASCII (Punycode)
+// This is required for domains with special characters (accents, etc.)
+// Example: "tiéuntigre.fr" -> "xn--tiuntigre-c4a.fr"
+func toPunycode(domain string) (string, error) {
+	// Convert to ASCII using IDNA2008
+	ascii, err := idna.ToASCII(domain)
+	if err != nil {
+		return "", fmt.Errorf("failed to convert domain to punycode: %w", err)
+	}
+	return ascii, nil
 }
 
 // HostingerRecord represents a DNS record in Hostinger
@@ -53,6 +67,12 @@ type HostingerDomain struct {
 
 // VerifyDomainManaged checks if the domain is managed by this Hostinger account
 func (h *HostingerProvider) VerifyDomainManaged(domain string) error {
+	// Convert domain to punycode for API calls
+	domainASCII, err := toPunycode(domain)
+	if err != nil {
+		return fmt.Errorf("invalid domain name: %w", err)
+	}
+
 	url := hostingerDomainsAPIURL + "/portfolio"
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -86,9 +106,9 @@ func (h *HostingerProvider) VerifyDomainManaged(domain string) error {
 		return fmt.Errorf("failed to parse portfolio response: %w", err)
 	}
 
-	// Check if domain is in the portfolio
+	// Check if domain is in the portfolio (compare using ASCII/punycode version)
 	for _, d := range domains {
-		if d.Domain == domain {
+		if d.Domain == domainASCII {
 			fmt.Printf("✓ Domain %s is managed by this Hostinger account\n", domain)
 			return nil
 		}
@@ -185,7 +205,13 @@ type APIZoneRecord struct {
 
 // getRecords retrieves all DNS records for a domain
 func (h *HostingerProvider) getRecords(domain string) ([]HostingerRecord, error) {
-	req, err := http.NewRequest("GET", hostingerDNSAPIURL+"/zones/"+domain, nil)
+	// Convert domain to punycode for API calls
+	domainASCII, err := toPunycode(domain)
+	if err != nil {
+		return nil, fmt.Errorf("invalid domain name: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", hostingerDNSAPIURL+"/zones/"+domainASCII, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +293,12 @@ func (h *HostingerProvider) replaceRecords(domain string, records []HostingerRec
 
 // updateRecordsWithOverwrite updates DNS records with optional overwrite mode
 func (h *HostingerProvider) updateRecordsWithOverwrite(domain string, records []HostingerRecord, overwrite bool) error {
+	// Convert domain to punycode for API calls
+	domainASCII, err := toPunycode(domain)
+	if err != nil {
+		return fmt.Errorf("invalid domain name: %w", err)
+	}
+
 	// Convert HostingerRecord to the API's expected format
 	zoneRecords := make([]ZoneRecord, 0, len(records))
 	for _, r := range records {
@@ -290,7 +322,7 @@ func (h *HostingerProvider) updateRecordsWithOverwrite(domain string, records []
 		return err
 	}
 
-	req, err := http.NewRequest("PUT", hostingerDNSAPIURL+"/zones/"+domain, bytes.NewBuffer(payload))
+	req, err := http.NewRequest("PUT", hostingerDNSAPIURL+"/zones/"+domainASCII, bytes.NewBuffer(payload))
 	if err != nil {
 		return err
 	}
@@ -325,6 +357,12 @@ func (h *HostingerProvider) ReplaceRecords(domain string, records []HostingerRec
 // DeleteCNAMEAndCreateA deletes a CNAME record if it exists and creates an A record
 // This handles the common case where Hostinger has a default CNAME for www pointing to the root domain
 func (h *HostingerProvider) DeleteCNAMEAndCreateA(domain, name, ip string) error {
+	// Convert domain to punycode for API calls
+	domainASCII, err := toPunycode(domain)
+	if err != nil {
+		return fmt.Errorf("invalid domain name: %w", err)
+	}
+
 	// Get existing records
 	existingRecords, err := h.getRecords(domain)
 	if err != nil {
@@ -359,7 +397,7 @@ func (h *HostingerProvider) DeleteCNAMEAndCreateA(domain, name, ip string) error
 		})
 
 		// Reset zone and rebuild
-		resetURL := hostingerDNSAPIURL + "/zones/" + domain + "/reset"
+		resetURL := hostingerDNSAPIURL + "/zones/" + domainASCII + "/reset"
 		req, err := http.NewRequest("POST", resetURL, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create reset request: %w", err)
@@ -392,6 +430,12 @@ func (h *HostingerProvider) DeleteCNAMEAndCreateA(domain, name, ip string) error
 
 // DeleteRecord deletes a DNS record from a domain
 func (h *HostingerProvider) DeleteRecord(domain, name, recordType string) error {
+	// Convert domain to punycode for API calls
+	domainASCII, err := toPunycode(domain)
+	if err != nil {
+		return fmt.Errorf("invalid domain name: %w", err)
+	}
+
 	// Get existing records
 	existingRecords, err := h.getRecords(domain)
 	if err != nil {
@@ -417,7 +461,7 @@ func (h *HostingerProvider) DeleteRecord(domain, name, recordType string) error 
 	// The Hostinger API doesn't have a direct delete endpoint for individual records
 	// We need to reset the zone and re-add all records except the one we want to delete
 	// First, reset the zone
-	resetURL := hostingerDNSAPIURL + "/zones/" + domain + "/reset"
+	resetURL := hostingerDNSAPIURL + "/zones/" + domainASCII + "/reset"
 	req, err := http.NewRequest("POST", resetURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create reset request: %w", err)
@@ -441,8 +485,14 @@ func (h *HostingerProvider) DeleteRecord(domain, name, recordType string) error 
 // UpdateNameservers updates the domain's nameservers to use ns1 and ns2
 // It first checks if they are already correctly configured
 func (h *HostingerProvider) UpdateNameservers(domain string) error {
-	desiredNS1 := fmt.Sprintf("ns1.%s", domain)
-	desiredNS2 := fmt.Sprintf("ns2.%s", domain)
+	// Convert domain to punycode for API calls
+	domainASCII, err := toPunycode(domain)
+	if err != nil {
+		return fmt.Errorf("invalid domain name: %w", err)
+	}
+
+	desiredNS1 := fmt.Sprintf("ns1.%s", domainASCII)
+	desiredNS2 := fmt.Sprintf("ns2.%s", domainASCII)
 
 	// First, check current nameservers
 	currentNameservers, err := h.GetNameservers(domain)
@@ -472,7 +522,7 @@ func (h *HostingerProvider) UpdateNameservers(domain string) error {
 		return err
 	}
 
-	req, err := http.NewRequest("PUT", hostingerDomainsAPIURL+"/portfolio/"+domain+"/nameservers", bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequest("PUT", hostingerDomainsAPIURL+"/portfolio/"+domainASCII+"/nameservers", bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return err
 	}
@@ -497,8 +547,14 @@ func (h *HostingerProvider) UpdateNameservers(domain string) error {
 
 // GetNameservers retrieves the current nameservers for a domain
 func (h *HostingerProvider) GetNameservers(domain string) ([]string, error) {
+	// Convert domain to punycode for API calls
+	domainASCII, err := toPunycode(domain)
+	if err != nil {
+		return nil, fmt.Errorf("invalid domain name: %w", err)
+	}
+
 	// Use the domain details endpoint which includes nameservers
-	req, err := http.NewRequest("GET", hostingerDomainsAPIURL+"/portfolio/"+domain, nil)
+	req, err := http.NewRequest("GET", hostingerDomainsAPIURL+"/portfolio/"+domainASCII, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -555,6 +611,12 @@ const (
 // ResetNameserversToDefault resets the domain's nameservers to Hostinger defaults
 // This also clears any child nameservers (glue records) that were set for local DNS
 func (h *HostingerProvider) ResetNameserversToDefault(domain string) error {
+	// Convert domain to punycode for API calls
+	domainASCII, err := toPunycode(domain)
+	if err != nil {
+		return fmt.Errorf("invalid domain name: %w", err)
+	}
+
 	// First, check current nameservers
 	currentNameservers, err := h.GetNameservers(domain)
 	if err != nil {
@@ -582,7 +644,7 @@ func (h *HostingerProvider) ResetNameserversToDefault(domain string) error {
 		return err
 	}
 
-	req, err := http.NewRequest("PUT", hostingerDomainsAPIURL+"/portfolio/"+domain+"/nameservers", bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequest("PUT", hostingerDomainsAPIURL+"/portfolio/"+domainASCII+"/nameservers", bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return err
 	}
@@ -1559,13 +1621,74 @@ func VerifyDNSPropagation(domainCfg DomainConfig, serverIP string, maxRetries in
 
 // checkDNSRecord checks if a FQDN resolves to the expected IP address
 func checkDNSRecord(fqdn, expectedIP string) (bool, error) {
-	cmd := exec.Command("dig", "+short", fqdn, "A")
+	// Convert FQDN to punycode for dig compatibility (handles accented domains)
+	fqdnASCII, err := toPunycode(fqdn)
+	if err != nil {
+		return false, fmt.Errorf("invalid domain name: %w", err)
+	}
+
+	// Debug: log the conversion
+	if fqdn != fqdnASCII {
+		fmt.Printf("  [DEBUG] Converted %s to %s\n", fqdn, fqdnASCII)
+	}
+
+	// First, get the authoritative nameservers for the domain
+	// Extract the base domain from FQDN (e.g., xn--tiuntigre-c4a.fr from adm.xn--tiuntigre-c4a.fr)
+	parts := strings.Split(fqdnASCII, ".")
+	var baseDomain string
+	if len(parts) >= 2 {
+		baseDomain = parts[len(parts)-2] + "." + parts[len(parts)-1]
+	} else {
+		baseDomain = fqdnASCII
+	}
+
+	fmt.Printf("  [DEBUG] Base domain: %s, Checking: %s\n", baseDomain, fqdnASCII)
+
+	// Query authoritative nameservers first using Google DNS (8.8.8.8)
+	// Local DNS may refuse queries, so we use a public resolver
+	nsCmd := exec.Command("dig", "@8.8.8.8", "+short", baseDomain, "NS")
+	nsOutput, err := nsCmd.Output()
+	fmt.Printf("  [DEBUG] NS query for %s: %s\n", baseDomain, strings.TrimSpace(string(nsOutput)))
+
+	if err == nil && len(strings.TrimSpace(string(nsOutput))) > 0 {
+		// Get first nameserver
+		nsLines := strings.Split(strings.TrimSpace(string(nsOutput)), "\n")
+		if len(nsLines) > 0 && nsLines[0] != "" {
+			ns := strings.TrimSpace(nsLines[0])
+			fmt.Printf("  [DEBUG] Querying @%s for %s A\n", ns, fqdnASCII)
+
+			// Query using authoritative nameserver
+			cmd := exec.Command("dig", "@"+ns, "+short", fqdnASCII, "A")
+			output, err := cmd.Output()
+
+			fmt.Printf("  [DEBUG] Response: %s (err: %v)\n", strings.TrimSpace(string(output)), err)
+
+			if err == nil {
+				lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+				if len(lines) > 0 && lines[0] != "" {
+					// Check if any of the returned IPs match our expected IP
+					for _, ip := range lines {
+						ip = strings.TrimSpace(ip)
+						if ip == expectedIP {
+							fmt.Printf("  [DEBUG] ✓ Match found: %s\n", ip)
+							return true, nil
+						}
+					}
+					// DNS record exists but points to wrong IP
+					return false, fmt.Errorf("resolves to %s, expected %s", strings.Join(lines, ", "), expectedIP)
+				}
+			}
+		}
+	}
+
+	// Fallback to regular query (using default resolvers)
+	cmd := exec.Command("dig", "+short", fqdnASCII, "A")
 	output, err := cmd.Output()
 	if err != nil {
 		return false, fmt.Errorf("dig command failed: %w", err)
 	}
 
-	// Parse output - dig returns one IP per line
+	// Parse output - dig returns one IP per line (may include CNAME first)
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) == 0 || lines[0] == "" {
 		return false, nil // No DNS record found yet

@@ -8,6 +8,7 @@ import (
 	"text/template"
 
 	"github.com/vricosti/hibana-stack/internal/config"
+	"golang.org/x/net/idna"
 )
 
 // CreateWorkspace creates a temporary working directory
@@ -50,6 +51,42 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 		return fmt.Errorf("no primary domain configured")
 	}
 
+	// Convert primary domain to Punycode for system compatibility (hostnames, etc.)
+	primaryDomainASCII, err := idna.ToASCII(primaryDomain.Name)
+	if err != nil {
+		return fmt.Errorf("invalid primary domain name: %w", err)
+	}
+
+	// Convert all domain names to Punycode for system compatibility
+	domainsASCII := make([]config.Domain, len(cfg.Domains))
+	for i, domain := range cfg.Domains {
+		domainASCII, err := idna.ToASCII(domain.Name)
+		if err != nil {
+			return fmt.Errorf("invalid domain name %s: %w", domain.Name, err)
+		}
+		// Copy domain and replace name with ASCII version
+		domainsASCII[i] = domain
+		domainsASCII[i].Name = domainASCII
+	}
+
+	// Convert domain redirects to Punycode
+	redirectsASCII := make([]config.DomainRedirect, len(cfg.DomainRedirects))
+	for i, redirect := range cfg.DomainRedirects {
+		fromASCII, err := idna.ToASCII(redirect.From)
+		if err != nil {
+			return fmt.Errorf("invalid redirect source domain %s: %w", redirect.From, err)
+		}
+		redirectsASCII[i] = redirect
+		redirectsASCII[i].From = fromASCII
+		// Convert 'To' if it contains a domain (may be a URL)
+		if redirect.To != "" {
+			// Try to convert, but don't fail if it's a URL
+			if toASCII, err := idna.ToASCII(redirect.To); err == nil {
+				redirectsASCII[i].To = toASCII
+			}
+		}
+	}
+
 	// Template data structure for backwards compatibility
 	type TemplateData struct {
 		ServerIP        string
@@ -66,13 +103,13 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 	data := TemplateData{
 		ServerIP:        cfg.ServerIP,
 		DNSProvider:     cfg.DNSProvider,
-		Domains:         cfg.Domains,
-		PrimaryDomain:   primaryDomain.Name,
+		Domains:         domainsASCII,          // Use Punycode versions
+		PrimaryDomain:   primaryDomainASCII,   // Use Punycode version
 		Subdomains:      primaryDomain.Subdomains, // Extract subdomains from primary domain
 		WebAdmin:        primaryDomain.WebAdmin,   // Extract webadmin from primary domain
 		DomainUser:      primaryDomain.DomainUser, // Extract domain_user from primary domain
 		SystemUsers:     cfg.SystemUsers,
-		DomainRedirects: cfg.DomainRedirects,
+		DomainRedirects: redirectsASCII,       // Use Punycode versions
 	}
 
 	// Template for group_vars/all.yml
