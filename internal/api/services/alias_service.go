@@ -20,7 +20,7 @@ func NewAliasService(db *sql.DB, domainService *DomainService) *AliasService {
 
 // GetByDomain returns all email aliases for a domain
 func (s *AliasService) GetByDomain(domainID int) ([]models.EmailAlias, error) {
-	query := `SELECT id, domain_id, source_address, destination, created_at
+	query := `SELECT id, domain_id, source_address, destination_addresses, created_at
 	          FROM email_aliases WHERE domain_id = $1 ORDER BY created_at DESC`
 
 	rows, err := s.db.Query(query, domainID)
@@ -29,10 +29,11 @@ func (s *AliasService) GetByDomain(domainID int) ([]models.EmailAlias, error) {
 	}
 	defer rows.Close()
 
-	var aliases []models.EmailAlias
+	// Initialize as empty slice instead of nil to ensure JSON marshaling returns []
+	aliases := make([]models.EmailAlias, 0)
 	for rows.Next() {
 		var alias models.EmailAlias
-		if err := rows.Scan(&alias.ID, &alias.DomainID, &alias.SourceAddress, &alias.Destination, &alias.CreatedAt); err != nil {
+		if err := rows.Scan(&alias.ID, &alias.DomainID, &alias.SourceAddress, &alias.DestinationAddresses, &alias.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan email alias: %w", err)
 		}
 		aliases = append(aliases, alias)
@@ -43,11 +44,11 @@ func (s *AliasService) GetByDomain(domainID int) ([]models.EmailAlias, error) {
 
 // GetByID returns an email alias by ID
 func (s *AliasService) GetByID(id int) (*models.EmailAlias, error) {
-	query := `SELECT id, domain_id, source_address, destination, created_at
+	query := `SELECT id, domain_id, source_address, destination_addresses, created_at
 	          FROM email_aliases WHERE id = $1`
 
 	var alias models.EmailAlias
-	err := s.db.QueryRow(query, id).Scan(&alias.ID, &alias.DomainID, &alias.SourceAddress, &alias.Destination, &alias.CreatedAt)
+	err := s.db.QueryRow(query, id).Scan(&alias.ID, &alias.DomainID, &alias.SourceAddress, &alias.DestinationAddresses, &alias.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("email alias not found")
 	}
@@ -60,7 +61,7 @@ func (s *AliasService) GetByID(id int) (*models.EmailAlias, error) {
 
 // GetAll returns all email aliases with domain information
 func (s *AliasService) GetAll() ([]models.EmailAliasWithDomain, error) {
-	query := `SELECT ea.id, ea.domain_id, ea.source_address, ea.destination, ea.created_at, d.name
+	query := `SELECT ea.id, ea.domain_id, ea.source_address, ea.destination_addresses, ea.created_at, d.name
 	          FROM email_aliases ea
 	          JOIN domains d ON ea.domain_id = d.id
 	          ORDER BY d.name, ea.source_address`
@@ -71,10 +72,11 @@ func (s *AliasService) GetAll() ([]models.EmailAliasWithDomain, error) {
 	}
 	defer rows.Close()
 
-	var aliases []models.EmailAliasWithDomain
+	// Initialize as empty slice instead of nil to ensure JSON marshaling returns []
+	aliases := make([]models.EmailAliasWithDomain, 0)
 	for rows.Next() {
 		var alias models.EmailAliasWithDomain
-		if err := rows.Scan(&alias.ID, &alias.DomainID, &alias.SourceAddress, &alias.Destination, &alias.CreatedAt, &alias.DomainName); err != nil {
+		if err := rows.Scan(&alias.ID, &alias.DomainID, &alias.SourceAddress, &alias.DestinationAddresses, &alias.CreatedAt, &alias.DomainName); err != nil {
 			return nil, fmt.Errorf("failed to scan email alias: %w", err)
 		}
 		alias.FullAddress = fmt.Sprintf("%s@%s", alias.SourceAddress, alias.DomainName)
@@ -100,9 +102,9 @@ func (s *AliasService) Create(domainID int, create *models.EmailAliasCreate) (*m
 
 	// Insert alias
 	var aliasID int
-	query := `INSERT INTO email_aliases (domain_id, source_address, destination)
+	query := `INSERT INTO email_aliases (domain_id, source_address, destination_addresses)
 	          VALUES ($1, $2, $3) RETURNING id`
-	err = s.db.QueryRow(query, domainID, create.SourceAddress, create.Destination).Scan(&aliasID)
+	err = s.db.QueryRow(query, domainID, create.SourceAddress, create.DestinationAddresses).Scan(&aliasID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert email alias: %w", err)
 	}
@@ -118,8 +120,8 @@ func (s *AliasService) Update(id int, update *models.EmailAliasUpdate) (*models.
 		return nil, err
 	}
 
-	query := `UPDATE email_aliases SET destination = $1 WHERE id = $2`
-	_, err = s.db.Exec(query, update.Destination, id)
+	query := `UPDATE email_aliases SET destination_addresses = $1 WHERE id = $2`
+	_, err = s.db.Exec(query, update.DestinationAddresses, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update email alias: %w", err)
 	}

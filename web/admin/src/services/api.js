@@ -108,6 +108,7 @@ export const dnsProviderAPI = {
   getAll: () => api.get('/dns-providers').then(res => res.data.data || []),
   getById: (id) => api.get(`/dns-providers/${id}`).then(res => res.data.data),
   create: (data) => api.post('/dns-providers', data),
+  update: (id, data) => api.put(`/dns-providers/${id}`, data),
   delete: (id) => api.delete(`/dns-providers/${id}`),
   testConnection: (data) => api.post('/dns-providers/test', data),
   getAvailableDomains: (id) => api.get(`/dns-providers/${id}/domains`).then(res => res.data.data || [])

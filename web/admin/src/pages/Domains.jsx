@@ -111,7 +111,7 @@ export default function Domains() {
                   className="clickable-row"
                 >
                   <td>
-                    <strong>{domain.name}</strong>
+                    <strong>{domain.display_name || domain.name}</strong>
                     {domain.id === primaryDomainId && (
                       <span className="badge badge-primary" style={{ marginLeft: '8px' }}>Primary</span>
                     )}

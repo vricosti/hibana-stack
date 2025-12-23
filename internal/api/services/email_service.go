@@ -29,7 +29,8 @@ func (s *EmailService) GetByDomain(domainID int) ([]models.EmailAccount, error) 
 	}
 	defer rows.Close()
 
-	var accounts []models.EmailAccount
+	// Initialize as empty slice instead of nil to ensure JSON marshaling returns []
+	accounts := make([]models.EmailAccount, 0)
 	for rows.Next() {
 		var acc models.EmailAccount
 		if err := rows.Scan(&acc.ID, &acc.DomainID, &acc.Username, &acc.FullName, &acc.CreatedAt); err != nil {
@@ -71,7 +72,8 @@ func (s *EmailService) GetAll() ([]models.EmailAccountWithDomain, error) {
 	}
 	defer rows.Close()
 
-	var accounts []models.EmailAccountWithDomain
+	// Initialize as empty slice instead of nil to ensure JSON marshaling returns []
+	accounts := make([]models.EmailAccountWithDomain, 0)
 	for rows.Next() {
 		var acc models.EmailAccountWithDomain
 		if err := rows.Scan(&acc.ID, &acc.DomainID, &acc.Username, &acc.FullName, &acc.CreatedAt, &acc.DomainName); err != nil {

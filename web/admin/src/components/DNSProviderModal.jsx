@@ -7,16 +7,18 @@ const PROVIDERS = [
   { value: 'ovh', label: 'OVH', requiresOVH: true }
 ];
 
-export default function DNSProviderModal({ onClose }) {
+export default function DNSProviderModal({ provider, onClose }) {
+  const isEditing = !!provider;
+
   const [formData, setFormData] = useState({
-    name: '',
-    type: 'external',
-    provider: '',
-    api_token: '',
-    endpoint: 'ovh-eu',
-    application_key: '',
-    application_secret: '',
-    consumer_key: ''
+    name: provider?.name || '',
+    type: provider?.type || 'external',
+    provider: provider?.provider || '',
+    api_token: provider?.api_token || '',
+    endpoint: provider?.endpoint || 'ovh-eu',
+    application_key: provider?.application_key || '',
+    application_secret: provider?.application_secret || '',
+    consumer_key: provider?.consumer_key || ''
   });
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -69,10 +71,15 @@ export default function DNSProviderModal({ onClose }) {
 
     setLoading(true);
     try {
-      await dnsProviderAPI.create(formData);
+      if (isEditing) {
+        await dnsProviderAPI.update(provider.id, formData);
+      } else {
+        await dnsProviderAPI.create(formData);
+      }
       onClose(true);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add DNS provider');
+      const action = isEditing ? 'update' : 'add';
+      setError(err.response?.data?.error || `Failed to ${action} DNS provider`);
     } finally {
       setLoading(false);
     }
@@ -82,7 +89,7 @@ export default function DNSProviderModal({ onClose }) {
     <div className="modal-overlay" onClick={() => onClose(false)}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Add DNS Provider</h3>
+          <h3>{isEditing ? 'Edit DNS Provider' : 'Add DNS Provider'}</h3>
           <button className="modal-close" onClick={() => onClose(false)}>&times;</button>
         </div>
         <form onSubmit={handleSubmit}>
@@ -107,12 +114,14 @@ export default function DNSProviderModal({ onClose }) {
                 className="form-control"
                 value={formData.provider}
                 onChange={(e) => handleProviderChange(e.target.value)}
+                disabled={isEditing}
               >
                 <option value="">Select a provider...</option>
                 {PROVIDERS.map(p => (
                   <option key={p.value} value={p.value}>{p.label}</option>
                 ))}
               </select>
+              {isEditing && <small style={{ color: '#666' }}>Provider type cannot be changed after creation</small>}
             </div>
 
             {selectedProvider?.requiresToken && (
@@ -127,7 +136,7 @@ export default function DNSProviderModal({ onClose }) {
                 />
                 <small>
                   {formData.provider === 'hostinger' && (
-                    <a href="https://hpanel.hostinger.com/api-tokens" target="_blank" rel="noopener noreferrer">
+                    <a href="https://hpanel.hostinger.com/profile/api" target="_blank" rel="noopener noreferrer">
                       Get your Hostinger API token
                     </a>
                   )}
@@ -208,7 +217,7 @@ export default function DNSProviderModal({ onClose }) {
               Cancel
             </button>
             <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Adding...' : 'Add Provider'}
+              {loading ? (isEditing ? 'Updating...' : 'Adding...') : (isEditing ? 'Update Provider' : 'Add Provider')}
             </button>
           </div>
         </form>

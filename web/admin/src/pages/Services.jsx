@@ -34,7 +34,9 @@ function Services() {
       const data = await serviceAPI.list(currentDomain.name);
       setServices(data || []);
     } catch (err) {
-      setError('Failed to load services');
+      // Display detailed error message from API response
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to load services';
+      setError(errorMessage);
       console.error(err);
     } finally {
       setLoading(false);
@@ -50,7 +52,8 @@ function Services() {
       // Refresh services after action
       await loadServices();
     } catch (err) {
-      setError(`Failed to ${action} service: ${err.message}`);
+      const errorMessage = err.response?.data?.error || err.message || `Failed to ${action} service`;
+      setError(errorMessage);
     } finally {
       setActionLoading(prev => ({ ...prev, [actionKey]: false }));
     }
