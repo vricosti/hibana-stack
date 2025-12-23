@@ -9,4 +9,4 @@ dbname = hibana
 # Query to lookup alias destination
 # Input: full email address (e.g., contact@example.com)
 # Output: destination email address
-query = SELECT destination FROM email_aliases ea JOIN domains d ON ea.domain_id = d.id WHERE CONCAT(ea.source_address, '@', d.name) = '%s'
+query = SELECT destination_addresses FROM email_aliases ea JOIN domains d ON ea.domain_id = d.id WHERE CONCAT(ea.source_address, '@', d.name) = '%s'
