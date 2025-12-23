@@ -17,6 +17,7 @@
 
     - role: powerdns
       tags: [powerdns, dns]
+      when: dns_provider is defined and dns_provider.type == 'local'
 
     - role: mail_server
       tags: [mail, postfix, dovecot]
