@@ -164,6 +164,19 @@
   set_fact:
     hibana_db_password: "{{ hibana_password_file['content'] | b64decode | trim }}"
 
+- name: Ensure domains exist in Hibana database
+  postgresql_query:
+    db: hibana
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    login_host: localhost
+    query: |
+      INSERT INTO domains (name, server_ip)
+      VALUES ('{{ item.name }}', '{{ server_ip }}')
+      ON CONFLICT (name) DO NOTHING
+  loop: "{{ domains }}"
+  become_user: postgres
+
 - name: Store email accounts in Hibana database
   postgresql_query:
     db: hibana
@@ -178,7 +191,7 @@
       VALUES (
         (SELECT id FROM domain_cte),
         '{{ item.1.username }}',
-        '{{ item.1.password | password_hash("sha512") }}',
+        '{{ item.1.password | password_hash("blowfish") }}',
         '{{ item.1.full_name | default("") }}'
       )
       ON CONFLICT (domain_id, username) DO UPDATE
