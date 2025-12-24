@@ -231,7 +231,7 @@
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         type VARCHAR(50) NOT NULL,
-        provider VARCHAR(50) NOT NULL,
+        provider VARCHAR(50) NOT NULL UNIQUE,
         api_token TEXT,
         endpoint VARCHAR(100),
         application_key TEXT,
@@ -411,7 +411,7 @@
       {% if dns_provider.name == 'hostinger' %}Hostinger{% elif dns_provider.name == 'cloudflare' %}Cloudflare{% elif dns_provider.name == 'ovh' %}OVH{% elif dns_provider.name == 'powerdns' %}PowerDNS (Local){% else %}{{ dns_provider.name | capitalize }}{% endif %}
   when: dns_provider is defined and dns_provider.name is defined
 
-- name: Insert DNS provider into database
+- name: Insert or update DNS provider in database
   postgresql_query:
     db: hibana
     login_host: localhost
@@ -419,7 +419,7 @@
     login_password: "{{ hibana_db_password }}"
     query: |
       INSERT INTO dns_providers (name, type, provider, api_token, endpoint, application_key, application_secret, consumer_key)
-      SELECT
+      VALUES (
         '{{ dns_provider_display_name | trim }}',
         '{{ dns_provider.type }}',
         '{{ dns_provider.name }}',
@@ -428,7 +428,17 @@
         {{ "'" + dns_provider.application_key + "'" if dns_provider.application_key is defined and dns_provider.application_key else 'NULL' }},
         {{ "'" + dns_provider.application_secret + "'" if dns_provider.application_secret is defined and dns_provider.application_secret else 'NULL' }},
         {{ "'" + dns_provider.consumer_key + "'" if dns_provider.consumer_key is defined and dns_provider.consumer_key else 'NULL' }}
-      WHERE NOT EXISTS (SELECT 1 FROM dns_providers WHERE provider = '{{ dns_provider.name }}')
+      )
+      ON CONFLICT (provider)
+      DO UPDATE SET
+        name = EXCLUDED.name,
+        type = EXCLUDED.type,
+        api_token = EXCLUDED.api_token,
+        endpoint = EXCLUDED.endpoint,
+        application_key = EXCLUDED.application_key,
+        application_secret = EXCLUDED.application_secret,
+        consumer_key = EXCLUDED.consumer_key,
+        updated_at = CURRENT_TIMESTAMP
   when: dns_provider is defined and dns_provider.name is defined and dns_provider.type != 'manual'
 
 - name: Insert DNS configuration into configuration table
