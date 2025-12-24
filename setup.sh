@@ -54,7 +54,7 @@ fi
 # Create Dockerfile
 cat > ansible/api-build/Dockerfile << 'EOF'
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates docker-cli docker-cli-compose
 WORKDIR /app
 COPY hibana-api ./hibana-api
 COPY web/ ./web/
