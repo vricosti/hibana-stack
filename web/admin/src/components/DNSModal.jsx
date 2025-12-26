@@ -1,12 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { dnsAPI } from '../services/api';
 
-const DNS_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'];
+const BASE_DNS_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'];
+const OVH_EXTRA_TYPES = ['SPF', 'DKIM', 'DMARC'];
 
-export default function DNSModal({ record, domainId, onClose }) {
+export default function DNSModal({ record, domainId, dnsProvider, onClose }) {
+  // Build DNS types list based on provider
+  const DNS_TYPES = useMemo(() => {
+    if (dnsProvider === 'ovh') {
+      return [...BASE_DNS_TYPES, ...OVH_EXTRA_TYPES];
+    }
+    return BASE_DNS_TYPES;
+  }, [dnsProvider]);
+
+  // For existing records, use the record's type even if not in the list
+  const getInitialType = () => {
+    if (record?.type) {
+      return record.type;
+    }
+    return 'A';
+  };
+
   const [formData, setFormData] = useState({
     name: record?.name || '',
-    type: record?.type || 'A',
+    type: getInitialType(),
     content: record?.content || '',
     ttl: record?.ttl || 3600,
     priority: record?.priority || 0
@@ -86,6 +103,10 @@ export default function DNSModal({ record, domainId, onClose }) {
                 required
                 disabled={!!record}
               >
+                {/* Show the record's type if editing and type not in list */}
+                {record && !DNS_TYPES.includes(record.type) && (
+                  <option key={record.type} value={record.type}>{record.type}</option>
+                )}
                 {DNS_TYPES.map((type) => (
                   <option key={type} value={type}>{type}</option>
                 ))}
