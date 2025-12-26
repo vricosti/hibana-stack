@@ -7,7 +7,7 @@ const formatProviderName = (name) => {
     powerdns: 'PowerDNS',
     hostinger: 'Hostinger',
     cloudflare: 'Cloudflare',
-    ovh: 'OVH'
+    ovhcloud: 'OVHcloud'
   };
   return names[name] || name;
 };

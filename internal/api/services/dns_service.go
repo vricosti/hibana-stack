@@ -162,7 +162,7 @@ func (s *DNSService) getRecordsFromExternalProvider(domainName string, config Fu
 		}
 		return records, nil
 
-	case "ovh":
+	case "ovhcloud":
 		if config.ApplicationKey == "" || config.ApplicationSecret == "" || config.ConsumerKey == "" {
 			return nil, fmt.Errorf("OVH credentials not configured")
 		}

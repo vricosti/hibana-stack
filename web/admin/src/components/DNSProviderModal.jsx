@@ -4,7 +4,7 @@ import { dnsProviderAPI } from '../services/api';
 const PROVIDERS = [
   { value: 'hostinger', label: 'Hostinger', requiresToken: true },
   { value: 'cloudflare', label: 'Cloudflare', requiresToken: true },
-  { value: 'ovh', label: 'OVH', requiresOVH: true }
+  { value: 'ovhcloud', label: 'OVHcloud', requiresOVH: true }
 ];
 
 export default function DNSProviderModal({ provider, onClose }) {
