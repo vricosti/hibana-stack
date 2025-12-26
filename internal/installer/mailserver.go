@@ -56,7 +56,7 @@ func (i *Installer) configurePostfix() error {
 	}
 
 	domain := primaryDomain.Name
-	hostname := fmt.Sprintf("mail.%s", domain)
+	hostname := fmt.Sprintf("mx.%s", domain)
 
 	// Set hostname
 	if err := exec.Command("hostnamectl", "set-hostname", hostname).Run(); err != nil {

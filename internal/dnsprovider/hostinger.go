@@ -848,8 +848,8 @@ func UpdateDNSRecords(providerName, providerType, apiToken string, domainCfg Dom
 
 			if hasMailserver {
 				// Check MX record
-				mxContent := fmt.Sprintf("10 mail.%s", domain)
-				if existing, ok := existingByNameType["@:MX"]; ok && strings.Contains(existing.Content, fmt.Sprintf("mail.%s", domain)) {
+				mxContent := fmt.Sprintf("10 mx.%s", domain)
+				if existing, ok := existingByNameType["@:MX"]; ok && strings.Contains(existing.Content, fmt.Sprintf("mx.%s", domain)) {
 					fmt.Printf("  ℹ %s MX: already configured\n", domain)
 				} else {
 					recordsToCreate = append(recordsToCreate, HostingerRecord{
@@ -1164,14 +1164,14 @@ func ConfigurePTR(providerName, apiToken, serverIP, domain string) error {
 	if providerName == "" || apiToken == "" {
 		// DNS provider not configured, show manual instructions
 		fmt.Println("\n⚠️  PTR records must be configured manually:")
-		fmt.Printf("    → Set PTR for IPv4 to: mail.%s\n", domain)
-		fmt.Printf("    → Set PTR for IPv6 to: mail.%s\n", domain)
+		fmt.Printf("    → Set PTR for IPv4 to: mx.%s\n", domain)
+		fmt.Printf("    → Set PTR for IPv6 to: mx.%s\n", domain)
 		fmt.Println("    → This is required for email deliverability")
 		return nil
 	}
 
 	providerName = strings.ToLower(strings.TrimSpace(providerName))
-	mailHostname := fmt.Sprintf("mail.%s", domain)
+	mailHostname := fmt.Sprintf("mx.%s", domain)
 
 	fmt.Println("\n📧 Configuring PTR records for mail server...")
 
@@ -1375,7 +1375,7 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 			shouldSkip := func(name, recordType string) (bool, string) {
 				key := fmt.Sprintf("%s:%s", name, recordType)
 				if existing, ok := existingByNameType[key]; ok {
-					if existing.Content == serverIP || (recordType == "MX" && strings.Contains(existing.Content, fmt.Sprintf("mail.%s", domain))) {
+					if existing.Content == serverIP || (recordType == "MX" && strings.Contains(existing.Content, fmt.Sprintf("mx.%s", domain))) {
 						return true, "already exists with correct value"
 					}
 					return false, ""
@@ -1425,7 +1425,7 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 			}
 
 			if hasMailserver {
-				mxContent := fmt.Sprintf("10 mail.%s", domain)
+				mxContent := fmt.Sprintf("10 mx.%s", domain)
 				if skip, reason := shouldSkip("@", "MX"); skip {
 					fmt.Printf("  ℹ %s MX: %s\n", domain, reason)
 				} else {

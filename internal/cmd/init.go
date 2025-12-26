@@ -317,8 +317,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	} else if primaryDomain.HasSubdomainRole("mailserver") {
 		// No DNS provider configured but mailserver is enabled - show manual PTR instructions
 		fmt.Println("\nPTR records must be configured manually for email deliverability:")
-		fmt.Printf("    Set PTR for IPv4 to: mail.%s\n", primaryDomain.Name)
-		fmt.Printf("    Set PTR for IPv6 to: mail.%s\n", primaryDomain.Name)
+		fmt.Printf("    Set PTR for IPv4 to: mx.%s\n", primaryDomain.Name)
+		fmt.Printf("    Set PTR for IPv6 to: mx.%s\n", primaryDomain.Name)
 	}
 
 	// Build list of enabled roles for primary domain
@@ -343,7 +343,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  - Website:    https://www.%s\n", primaryDomain.Name)
 	}
 	if enabledRoles["mailserver"] {
-		fmt.Printf("  - Mail:       mail.%s\n", primaryDomain.Name)
+		fmt.Printf("  - Mail:       mx.%s\n", primaryDomain.Name)
 	}
 
 	// Show secondary domains

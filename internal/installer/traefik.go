@@ -235,8 +235,8 @@ services:
     networks:
       - hibana-network
     environment:
-      - ROUNDCUBEMAIL_DEFAULT_HOST=mail.%s
-      - ROUNDCUBEMAIL_SMTP_SERVER=mail.%s
+      - ROUNDCUBEMAIL_DEFAULT_HOST=mx.%s
+      - ROUNDCUBEMAIL_SMTP_SERVER=mx.%s
       - ROUNDCUBEMAIL_DEFAULT_PORT=143
       - ROUNDCUBEMAIL_SMTP_PORT=587
       - ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=30M

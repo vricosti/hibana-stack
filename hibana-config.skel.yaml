@@ -20,7 +20,7 @@ server_ip: YOUR_SERVER_IP
 # For OVH (requires 3 credentials from https://eu.api.ovh.com/createToken/):
 #   dns_provider:
 #     type: external
-#     name: ovh
+#     name: ovhcloud
 #     endpoint: ovh-eu              # ovh-eu, ovh-ca, ovh-us, soyoustart-eu, kimsufi-eu
 #     application_key: YOUR_APP_KEY
 #     application_secret: YOUR_APP_SECRET
@@ -40,7 +40,7 @@ domains:
     subdomains:
       - name: adm
         role: webadmin
-      - name: mail
+      - name: mx
         role: mailserver
       - name: webmail
         role: webmail

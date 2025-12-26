@@ -34,9 +34,9 @@
     proto: tcp
   when: ansible_facts.services['ufw.service'] is defined
 
-- name: Set hostname to mail.{{ primary_domain }}
+- name: Set hostname to mx.{{ primary_domain }}
   hostname:
-    name: mail.{{ primary_domain }}
+    name: mx.{{ primary_domain }}
 
 - name: Create /etc/ssl/private directory
   file:

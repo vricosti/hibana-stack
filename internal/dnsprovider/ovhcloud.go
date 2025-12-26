@@ -295,13 +295,13 @@ func (o *OVHCloudProvider) ConfigureMailRecords(domain, serverIP string) error {
 	mxRecord := OVHRecord{
 		FieldType: "MX",
 		SubDomain: "",
-		Target:    fmt.Sprintf("10 mail.%s.", domainASCII),
+		Target:    fmt.Sprintf("10 mx.%s.", domainASCII),
 		TTL:       14400,
 	}
 	if err := o.ReplaceOrCreateRecord(domain, mxRecord); err != nil {
 		fmt.Printf("    Warning: Failed to create MX record: %v\n", err)
 	} else {
-		fmt.Printf("    MX record: 10 mail.%s\n", domain)
+		fmt.Printf("    MX record: 10 mx.%s\n", domain)
 	}
 
 	// SPF record
@@ -490,13 +490,13 @@ func UpdateDNSRecordsPreInstallOVH(creds OVHCloudCredentials, domainCfg DomainCo
 		mxRecord := OVHRecord{
 			FieldType: "MX",
 			SubDomain: "",
-			Target:    fmt.Sprintf("10 mail.%s.", domainASCII),
+			Target:    fmt.Sprintf("10 mx.%s.", domainASCII),
 			TTL:       14400,
 		}
 		if err := provider.ReplaceOrCreateRecord(domain, mxRecord); err != nil {
 			fmt.Printf("    Warning: Failed to create MX record: %v\n", err)
 		} else {
-			fmt.Printf("    %s MX 10 mail.%s\n", domain, domain)
+			fmt.Printf("    %s MX 10 mx.%s\n", domain, domain)
 		}
 	}
 
