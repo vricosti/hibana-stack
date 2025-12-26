@@ -149,7 +149,7 @@ func BackupOVHRecords(provider *OVHCloudProvider, domain string, dbHost, dbPort,
 	for _, r := range records {
 		backupRecord := DNSBackupRecord{
 			DomainName:    domain,
-			Provider:      "ovh",
+			Provider:      "ovhcloud",
 			RecordType:    r.FieldType,
 			RecordName:    r.SubDomain,
 			RecordContent: r.Target,

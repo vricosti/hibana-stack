@@ -20,7 +20,7 @@ type Config struct {
 // DNSProviderConfig represents DNS provider configuration
 type DNSProviderConfig struct {
 	Type     string `yaml:"type"`                // "local", "external", or "manual"
-	Name     string `yaml:"name,omitempty"`      // Provider name: hostinger, cloudflare, ovh
+	Name     string `yaml:"name,omitempty"`      // Provider name: hostinger, cloudflare, ovhcloud
 	APIToken string `yaml:"api_token,omitempty"` // API token (for hostinger, cloudflare)
 
 	// OVH-specific credentials (from https://eu.api.ovh.com/createToken/)
@@ -180,15 +180,15 @@ func (d *DNSProviderConfig) Validate() error {
 			if d.APIToken == "" {
 				return fmt.Errorf("api_token is required for provider '%s'", d.Name)
 			}
-		case "ovh":
+		case "ovhcloud":
 			if d.ApplicationKey == "" {
-				return fmt.Errorf("application_key is required for provider 'ovh'")
+				return fmt.Errorf("application_key is required for provider 'ovhcloud'")
 			}
 			if d.ApplicationSecret == "" {
-				return fmt.Errorf("application_secret is required for provider 'ovh'")
+				return fmt.Errorf("application_secret is required for provider 'ovhcloud'")
 			}
 			if d.ConsumerKey == "" {
-				return fmt.Errorf("consumer_key is required for provider 'ovh'")
+				return fmt.Errorf("consumer_key is required for provider 'ovhcloud'")
 			}
 			// Set default endpoint if not specified
 			if d.Endpoint == "" {
@@ -204,7 +204,7 @@ func (d *DNSProviderConfig) Validate() error {
 				return fmt.Errorf("invalid OVH endpoint '%s' (valid: ovh-eu, ovh-ca, ovh-us, soyoustart-eu, soyoustart-ca, kimsufi-eu, kimsufi-ca)", d.Endpoint)
 			}
 		default:
-			return fmt.Errorf("unsupported DNS provider '%s' (supported: hostinger, cloudflare, ovh)", d.Name)
+			return fmt.Errorf("unsupported DNS provider '%s' (supported: hostinger, cloudflare, ovhcloud)", d.Name)
 		}
 	}
 

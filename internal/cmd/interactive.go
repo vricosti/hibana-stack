@@ -228,7 +228,7 @@ func promptOVHCloudCredentials(reader *bufio.Reader, domain string) (*config.DNS
 
 	return &config.DNSProviderConfig{
 		Type:              "external",
-		Name:              "ovh",
+		Name:              "ovhcloud",
 		Endpoint:          "ovh-eu",
 		ApplicationKey:    appKey,
 		ApplicationSecret: appSecret,
@@ -252,7 +252,7 @@ dns_provider:
 	// Add provider-specific credentials
 	if cfg.DNSProvider.Name == "hostinger" {
 		data += fmt.Sprintf("  api_token: %s\n", cfg.DNSProvider.APIToken)
-	} else if cfg.DNSProvider.Name == "ovh" {
+	} else if cfg.DNSProvider.Name == "ovhcloud" {
 		data += fmt.Sprintf(`  endpoint: %s
   application_key: %s
   application_secret: %s

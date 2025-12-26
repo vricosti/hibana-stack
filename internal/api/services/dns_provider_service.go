@@ -30,7 +30,7 @@ type DNSProvider struct {
 	ID                int       `json:"id"`
 	Name              string    `json:"name"`
 	Type              string    `json:"type"`     // "local" or "external"
-	Provider          string    `json:"provider"` // "powerdns", "hostinger", "cloudflare", "ovh"
+	Provider          string    `json:"provider"` // "powerdns", "hostinger", "cloudflare", "ovhcloud"
 	APIToken          string    `json:"api_token,omitempty"`
 	Endpoint          string    `json:"endpoint,omitempty"`
 	ApplicationKey    string    `json:"application_key,omitempty"`
@@ -214,7 +214,7 @@ func (s *DNSProviderService) GetAvailableDomains(providerID int) ([]AvailableDom
 	switch provider.Provider {
 	case "hostinger":
 		return s.getHostingerDomains(provider.APIToken)
-	case "ovh":
+	case "ovhcloud":
 		return s.getOVHDomains(provider)
 	case "powerdns":
 		// For local PowerDNS, return empty - domains are created locally
@@ -552,7 +552,7 @@ func (s *DNSProviderService) TestConnection(create *DNSProviderCreate) error {
 		}
 		return nil
 
-	case "ovh":
+	case "ovhcloud":
 		return s.testOVHConnection(create)
 
 	case "powerdns":

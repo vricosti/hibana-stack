@@ -7,7 +7,7 @@ const OVH_EXTRA_TYPES = ['SPF', 'DKIM', 'DMARC'];
 export default function DNSModal({ record, domainId, dnsProvider, onClose }) {
   // Build DNS types list based on provider
   const DNS_TYPES = useMemo(() => {
-    if (dnsProvider === 'ovh') {
+    if (dnsProvider === 'ovhcloud') {
       return [...BASE_DNS_TYPES, ...OVH_EXTRA_TYPES];
     }
     return BASE_DNS_TYPES;

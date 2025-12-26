@@ -18,7 +18,7 @@ func NewConfigService(db *sql.DB) *ConfigService {
 // DNSProviderConfig represents the DNS provider configuration
 type DNSProviderConfig struct {
 	Type string `json:"type"` // "local", "external", "manual"
-	Name string `json:"name"` // "powerdns", "hostinger", "cloudflare", "ovh"
+	Name string `json:"name"` // "powerdns", "hostinger", "cloudflare", "ovhcloud"
 }
 
 // GetDNSProvider returns the DNS provider configuration
