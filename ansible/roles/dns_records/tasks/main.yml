@@ -191,7 +191,7 @@
     query: >
       INSERT INTO records (domain_id, name, type, content, ttl, prio)
       VALUES ({{ domain_id }}, '_dmarc.{{ primary_domain }}', 'TXT',
-              'v=DMARC1; p=none; rua=mailto:dmarc@{{ primary_domain }}', 3600, NULL)
+              'v=DMARC1; p=none; rua=mailto:contact@{{ primary_domain }}', 3600, NULL)
   become_user: postgres
 
 - name: Insert CAA records for Let's Encrypt
