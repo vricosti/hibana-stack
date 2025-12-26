@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useDomain } from '../context/DomainContext';
-import { dnsAPI } from '../services/api';
+import { dnsAPI, configAPI } from '../services/api';
 import DNSModal from '../components/DNSModal';
 
 export default function DNS() {
   const { currentDomain } = useDomain();
   const [dnsRecords, setDnsRecords] = useState([]);
+  const [dnsProvider, setDnsProvider] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -14,8 +15,18 @@ export default function DNS() {
   useEffect(() => {
     if (currentDomain) {
       loadDNSRecords();
+      loadDNSProvider();
     }
   }, [currentDomain]);
+
+  const loadDNSProvider = async () => {
+    try {
+      const config = await configAPI.getDNSProvider();
+      setDnsProvider(config?.name || null);
+    } catch (err) {
+      console.error('Failed to load DNS provider:', err);
+    }
+  };
 
   const loadDNSRecords = async () => {
     if (!currentDomain) return;
@@ -165,6 +176,7 @@ export default function DNS() {
         <DNSModal
           record={editingRecord}
           domainId={currentDomain.id}
+          dnsProvider={dnsProvider}
           onClose={handleModalClose}
         />
       )}

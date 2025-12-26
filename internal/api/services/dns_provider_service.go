@@ -1,6 +1,7 @@
 package services
 
 import (
+	"crypto/sha1"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -213,6 +214,8 @@ func (s *DNSProviderService) GetAvailableDomains(providerID int) ([]AvailableDom
 	switch provider.Provider {
 	case "hostinger":
 		return s.getHostingerDomains(provider.APIToken)
+	case "ovh":
+		return s.getOVHDomains(provider)
 	case "powerdns":
 		// For local PowerDNS, return empty - domains are created locally
 		return []AvailableDomain{}, nil
@@ -347,6 +350,182 @@ func (s *DNSProviderService) getHostingerDomainTarget(apiToken, domain string) (
 	return "-", ""
 }
 
+// getOVHDomains fetches domains from OVH API
+func (s *DNSProviderService) getOVHDomains(provider *DNSProvider) ([]AvailableDomain, error) {
+	// Get list of zones from OVH
+	zones, err := s.ovhAPICall("GET", "/domain/zone", provider, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch OVH zones: %w", err)
+	}
+
+	var zoneList []string
+	if err := json.Unmarshal(zones, &zoneList); err != nil {
+		return nil, fmt.Errorf("failed to parse OVH zones: %w", err)
+	}
+
+	// Get already configured domains from our database
+	configuredDomains := make(map[string]bool)
+	rows, err := s.db.Query("SELECT name FROM domains")
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var name string
+			rows.Scan(&name)
+			configuredDomains[name] = true
+		}
+	}
+
+	// Build list of domains
+	var available []AvailableDomain
+	for _, zone := range zoneList {
+		ad := AvailableDomain{
+			Domain:    zone,
+			Status:    "active",
+			Managed:   configuredDomains[zone],
+			Available: true,
+		}
+
+		// Get A record for root domain
+		target, recordType := s.getOVHDomainTarget(provider, zone)
+		ad.Target = target
+		ad.RecordType = recordType
+
+		available = append(available, ad)
+	}
+
+	return available, nil
+}
+
+// getOVHDomainTarget fetches the root A record for a domain from OVH
+func (s *DNSProviderService) getOVHDomainTarget(provider *DNSProvider, domain string) (string, string) {
+	// Get A records for root
+	recordsData, err := s.ovhAPICall("GET", fmt.Sprintf("/domain/zone/%s/record?fieldType=A&subDomain=", domain), provider, nil)
+	if err != nil {
+		return "-", ""
+	}
+
+	var recordIDs []int64
+	if err := json.Unmarshal(recordsData, &recordIDs); err != nil || len(recordIDs) == 0 {
+		return "-", ""
+	}
+
+	// Get first record details
+	recordData, err := s.ovhAPICall("GET", fmt.Sprintf("/domain/zone/%s/record/%d", domain, recordIDs[0]), provider, nil)
+	if err != nil {
+		return "-", ""
+	}
+
+	var record struct {
+		Target string `json:"target"`
+	}
+	if err := json.Unmarshal(recordData, &record); err != nil {
+		return "-", ""
+	}
+
+	return record.Target, "A"
+}
+
+// testOVHConnection tests connection to OVH API
+func (s *DNSProviderService) testOVHConnection(create *DNSProviderCreate) error {
+	provider := &DNSProvider{
+		Endpoint:          create.Endpoint,
+		ApplicationKey:    create.ApplicationKey,
+		ApplicationSecret: create.ApplicationSecret,
+		ConsumerKey:       create.ConsumerKey,
+	}
+
+	_, err := s.ovhAPICall("GET", "/domain/zone", provider, nil)
+	if err != nil {
+		return fmt.Errorf("OVH connection failed: %w", err)
+	}
+	return nil
+}
+
+// ovhAPICall makes an authenticated call to OVH API
+func (s *DNSProviderService) ovhAPICall(method, path string, provider *DNSProvider, body []byte) ([]byte, error) {
+	endpoint := provider.Endpoint
+	if endpoint == "" {
+		endpoint = "ovh-eu"
+	}
+
+	// Map endpoint to base URL
+	baseURLs := map[string]string{
+		"ovh-eu":        "https://eu.api.ovh.com/1.0",
+		"ovh-ca":        "https://ca.api.ovh.com/1.0",
+		"ovh-us":        "https://api.us.ovhcloud.com/1.0",
+		"soyoustart-eu": "https://eu.api.soyoustart.com/1.0",
+		"soyoustart-ca": "https://ca.api.soyoustart.com/1.0",
+		"kimsufi-eu":    "https://eu.api.kimsufi.com/1.0",
+		"kimsufi-ca":    "https://ca.api.kimsufi.com/1.0",
+	}
+
+	baseURL, ok := baseURLs[endpoint]
+	if !ok {
+		baseURL = baseURLs["ovh-eu"]
+	}
+
+	url := baseURL + path
+
+	// Get current timestamp
+	timeResp, err := http.Get(baseURL + "/auth/time")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get OVH time: %w", err)
+	}
+	defer timeResp.Body.Close()
+	timeBody, _ := io.ReadAll(timeResp.Body)
+	timestamp := strings.TrimSpace(string(timeBody))
+
+	// Build signature
+	// Signature = "$1$" + SHA1(AS+"+"+CK+"+"+METHOD+"+"+QUERY+"+"+BODY+"+"+TSTAMP)
+	bodyStr := ""
+	if body != nil {
+		bodyStr = string(body)
+	}
+	toSign := fmt.Sprintf("%s+%s+%s+%s+%s+%s",
+		provider.ApplicationSecret,
+		provider.ConsumerKey,
+		method,
+		url,
+		bodyStr,
+		timestamp,
+	)
+
+	h := sha1.New()
+	h.Write([]byte(toSign))
+	signature := "$1$" + fmt.Sprintf("%x", h.Sum(nil))
+
+	// Create request
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = strings.NewReader(string(body))
+	}
+	req, err := http.NewRequest(method, url, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Ovh-Application", provider.ApplicationKey)
+	req.Header.Set("X-Ovh-Timestamp", timestamp)
+	req.Header.Set("X-Ovh-Signature", signature)
+	req.Header.Set("X-Ovh-Consumer", provider.ConsumerKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("OVH API error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	return respBody, nil
+}
+
 // TestConnection tests the connection to a DNS provider
 func (s *DNSProviderService) TestConnection(create *DNSProviderCreate) error {
 	switch create.Provider {
@@ -372,6 +551,9 @@ func (s *DNSProviderService) TestConnection(create *DNSProviderCreate) error {
 			return fmt.Errorf("API error: %s", string(body))
 		}
 		return nil
+
+	case "ovh":
+		return s.testOVHConnection(create)
 
 	case "powerdns":
 		// Local PowerDNS is always available

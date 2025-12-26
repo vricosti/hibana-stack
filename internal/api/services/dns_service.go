@@ -33,9 +33,9 @@ func (s *DNSService) GetByDomain(domainID int) ([]models.DNSRecord, error) {
 	}
 
 	// Check if using external DNS provider
-	providerType, providerName, apiToken := s.getDNSProviderConfig()
-	if providerType == "external" {
-		return s.getRecordsFromExternalProvider(domainName, providerName, apiToken)
+	config := s.getFullDNSProviderConfig()
+	if config.Type == "external" {
+		return s.getRecordsFromExternalProvider(domainName, config)
 	}
 
 	// Get PowerDNS domain ID
@@ -74,33 +74,63 @@ func (s *DNSService) GetByDomain(domainID int) ([]models.DNSRecord, error) {
 	return records, nil
 }
 
+// FullDNSProviderConfig holds full DNS provider configuration including credentials
+type FullDNSProviderConfig struct {
+	Type              string
+	Name              string
+	APIToken          string
+	Endpoint          string
+	ApplicationKey    string
+	ApplicationSecret string
+	ConsumerKey       string
+}
+
 // getDNSProviderConfig retrieves the DNS provider configuration from the database
 func (s *DNSService) getDNSProviderConfig() (providerType, providerName, apiToken string) {
+	config := s.getFullDNSProviderConfig()
+	return config.Type, config.Name, config.APIToken
+}
+
+// getFullDNSProviderConfig retrieves the full DNS provider configuration from the database
+func (s *DNSService) getFullDNSProviderConfig() FullDNSProviderConfig {
+	var config FullDNSProviderConfig
+
 	// Get DNS provider type and name from configuration
-	err := s.hibanaDB.QueryRow(`SELECT value FROM configuration WHERE key = 'dns_provider_type'`).Scan(&providerType)
-	if err != nil {
-		return "", "", ""
+	s.hibanaDB.QueryRow(`SELECT value FROM configuration WHERE key = 'dns_provider_type'`).Scan(&config.Type)
+	s.hibanaDB.QueryRow(`SELECT value FROM configuration WHERE key = 'dns_provider_name'`).Scan(&config.Name)
+
+	// Get credentials from dns_providers table
+	var apiToken, endpoint, appKey, appSecret, consumerKey sql.NullString
+	s.hibanaDB.QueryRow(`SELECT api_token, endpoint, application_key, application_secret, consumer_key
+		FROM dns_providers WHERE provider = $1`, config.Name).Scan(&apiToken, &endpoint, &appKey, &appSecret, &consumerKey)
+
+	if apiToken.Valid {
+		config.APIToken = apiToken.String
+	}
+	if endpoint.Valid {
+		config.Endpoint = endpoint.String
+	}
+	if appKey.Valid {
+		config.ApplicationKey = appKey.String
+	}
+	if appSecret.Valid {
+		config.ApplicationSecret = appSecret.String
+	}
+	if consumerKey.Valid {
+		config.ConsumerKey = consumerKey.String
 	}
 
-	err = s.hibanaDB.QueryRow(`SELECT value FROM configuration WHERE key = 'dns_provider_name'`).Scan(&providerName)
-	if err != nil {
-		return providerType, "", ""
-	}
-
-	// Get API token from dns_providers table
-	_ = s.hibanaDB.QueryRow(`SELECT api_token FROM dns_providers WHERE provider = $1`, providerName).Scan(&apiToken)
-
-	return providerType, providerName, apiToken
+	return config
 }
 
 // getRecordsFromExternalProvider fetches DNS records from an external provider
-func (s *DNSService) getRecordsFromExternalProvider(domainName, providerName, apiToken string) ([]models.DNSRecord, error) {
-	switch providerName {
+func (s *DNSService) getRecordsFromExternalProvider(domainName string, config FullDNSProviderConfig) ([]models.DNSRecord, error) {
+	switch config.Name {
 	case "hostinger":
-		if apiToken == "" {
+		if config.APIToken == "" {
 			return nil, fmt.Errorf("Hostinger API token not configured")
 		}
-		provider := dnsprovider.NewHostingerProvider(apiToken)
+		provider := dnsprovider.NewHostingerProvider(config.APIToken)
 		hostingerRecords, err := provider.GetRecordsPublic(domainName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch records from Hostinger: %w", err)
@@ -132,8 +162,56 @@ func (s *DNSService) getRecordsFromExternalProvider(domainName, providerName, ap
 		}
 		return records, nil
 
+	case "ovh":
+		if config.ApplicationKey == "" || config.ApplicationSecret == "" || config.ConsumerKey == "" {
+			return nil, fmt.Errorf("OVH credentials not configured")
+		}
+		creds := dnsprovider.OVHCloudCredentials{
+			Endpoint:          config.Endpoint,
+			ApplicationKey:    config.ApplicationKey,
+			ApplicationSecret: config.ApplicationSecret,
+			ConsumerKey:       config.ConsumerKey,
+		}
+		provider, err := dnsprovider.NewOVHCloudProvider(creds)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create OVH provider: %w", err)
+		}
+
+		ovhRecords, err := provider.GetRecords(domainName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch records from OVH: %w", err)
+		}
+
+		// Convert OVH records to our model
+		var records []models.DNSRecord
+		for _, or := range ovhRecords {
+			name := or.SubDomain
+			if name == "" {
+				name = "@"
+			}
+			rec := models.DNSRecord{
+				ID:       int(or.ID),
+				DomainID: 0, // External records don't have a local domain ID
+				Name:     name,
+				Type:     or.FieldType,
+				Content:  or.Target,
+				TTL:      or.TTL,
+			}
+			// Parse priority from MX records
+			if or.FieldType == "MX" {
+				// MX content format: "10 mail.example.com."
+				parts := strings.SplitN(or.Target, " ", 2)
+				if len(parts) == 2 {
+					fmt.Sscanf(parts[0], "%d", &rec.Priority)
+					rec.Content = parts[1]
+				}
+			}
+			records = append(records, rec)
+		}
+		return records, nil
+
 	default:
-		return nil, fmt.Errorf("unsupported DNS provider: %s", providerName)
+		return nil, fmt.Errorf("unsupported DNS provider: %s", config.Name)
 	}
 }
 
