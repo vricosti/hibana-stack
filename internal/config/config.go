@@ -306,7 +306,7 @@ func (c *Config) GetDNSRecords(domain *Domain, dkimPublicKey string) []DNSRecord
 	serial := time.Now().Format("2006010215") // YYYYMMDDnn format
 
 	primaryDomain := c.GetPrimaryDomainName()
-	mailServer := fmt.Sprintf("mail.%s", primaryDomain)
+	mailServer := fmt.Sprintf("mx.%s", primaryDomain)
 
 	records := []DNSRecord{
 		// SOA record (required for PowerDNS to be authoritative)

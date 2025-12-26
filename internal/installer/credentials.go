@@ -121,8 +121,8 @@ The following email accounts have been created:
    Password: %s
    Full Name: %s
 
-   IMAP Server: mail.%s:993 (SSL/TLS)
-   SMTP Server: mail.%s:587 (STARTTLS)
+   IMAP Server: mx.%s:993 (SSL/TLS)
+   SMTP Server: mx.%s:587 (STARTTLS)
    Webmail: https://webmail.%s
 
 `,
@@ -148,8 +148,8 @@ Web Interfaces:
   - Webmail:       https://webmail.` + summary.Domain + `
 
 Mail Server:
-  - IMAP:          mail.` + summary.Domain + `:993 (SSL/TLS)
-  - SMTP:          mail.` + summary.Domain + `:587 (STARTTLS)
+  - IMAP:          mx.` + summary.Domain + `:993 (SSL/TLS)
+  - SMTP:          mx.` + summary.Domain + `:587 (STARTTLS)
 
 DNS Server:
   - Nameserver:    ns1.` + summary.Domain + ` (` + summary.ServerIP + `)

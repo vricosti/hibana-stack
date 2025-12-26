@@ -385,8 +385,8 @@ func (s *DNSService) CreateDefaultRecords(domainID int, serverIP string) error {
 	defaultRecords := []models.DNSRecordCreate{
 		{Name: "@", Type: "A", Content: serverIP, TTL: 300},
 		{Name: "www", Type: "A", Content: serverIP, TTL: 300},
-		{Name: "mail", Type: "A", Content: serverIP, TTL: 3600},
-		{Name: "@", Type: "MX", Content: fmt.Sprintf("mail.%s", domainName), TTL: 14400, Priority: 10},
+		{Name: "mx", Type: "A", Content: serverIP, TTL: 3600},
+		{Name: "@", Type: "MX", Content: fmt.Sprintf("mx.%s", domainName), TTL: 14400, Priority: 10},
 		{Name: "@", Type: "TXT", Content: fmt.Sprintf(`"v=spf1 ip4:%s -all"`, serverIP), TTL: 14400},
 	}
 
