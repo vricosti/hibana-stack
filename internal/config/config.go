@@ -325,7 +325,7 @@ func (c *Config) GetDNSRecords(domain *Domain, dkimPublicKey string) []DNSRecord
 		{Type: "TXT", Name: "@", Content: fmt.Sprintf("v=spf1 ip4:%s -all", c.ServerIP), TTL: 14400},
 
 		// DMARC record
-		{Type: "TXT", Name: "_dmarc", Content: fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", domain.Name), TTL: 3600},
+		{Type: "TXT", Name: "_dmarc", Content: fmt.Sprintf("v=DMARC1; p=none; rua=mailto:contact@%s", domain.Name), TTL: 3600},
 
 		// CAA records for Let's Encrypt
 		{Type: "CAA", Name: "@", Content: `0 issue "letsencrypt.org"`, TTL: 14400},

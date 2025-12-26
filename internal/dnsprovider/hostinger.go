@@ -670,7 +670,7 @@ func (h *HostingerProvider) ResetNameserversToDefault(domain string) error {
 
 // VerifyDomainOwnership verifies that the domain is managed by the DNS provider
 func VerifyDomainOwnership(providerName, apiToken, domain string) error {
-	if providerName == "" || apiToken == "" {
+	if providerName == "" {
 		// DNS provider not configured, skip
 		return nil
 	}
@@ -678,16 +678,23 @@ func VerifyDomainOwnership(providerName, apiToken, domain string) error {
 	// Normalize provider name (case insensitive)
 	providerName = strings.ToLower(strings.TrimSpace(providerName))
 
-	fmt.Println("\n🌐 Verifying DNS provider configuration...")
+	fmt.Println("\n  Verifying DNS provider configuration...")
 
 	switch providerName {
 	case "hostinger":
+		if apiToken == "" {
+			return fmt.Errorf("api_token is required for hostinger")
+		}
 		provider := NewHostingerProvider(apiToken)
-		fmt.Println("→ Checking domain ownership...")
+		fmt.Println("  Checking domain ownership...")
 		if err := provider.VerifyDomainManaged(domain); err != nil {
 			return fmt.Errorf("domain verification failed: %w", err)
 		}
-		fmt.Println("✓ DNS provider verification complete")
+		fmt.Println("  DNS provider verification complete")
+		return nil
+	case "ovh", "ovhcloud":
+		// OVHcloud requires full credentials - skip here, verification done in VerifyDomainOwnershipOVH
+		fmt.Println("  OVHcloud provider - verification requires full credentials")
 		return nil
 	default:
 		return fmt.Errorf("unsupported DNS provider: %s", providerName)
@@ -882,7 +889,7 @@ func UpdateDNSRecords(providerName, providerType, apiToken string, domainCfg Dom
 				if err != nil {
 					domainASCII = domain // Fallback to original if conversion fails
 				}
-				dmarcContent := fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", domainASCII)
+				dmarcContent := fmt.Sprintf("v=DMARC1; p=none; rua=mailto:contact@%s", domainASCII)
 				if _, ok := existingByNameType["_dmarc:TXT"]; ok {
 					fmt.Printf("  ℹ %s DMARC: already configured\n", domain)
 				} else {
@@ -1534,7 +1541,7 @@ func UpdateDNSRecordsPostInstall(providerName, providerType, apiToken string, do
 		if err != nil {
 			domainASCII = domain // Fallback to original if conversion fails
 		}
-		dmarcContent := fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s", domainASCII)
+		dmarcContent := fmt.Sprintf("v=DMARC1; p=none; rua=mailto:contact@%s", domainASCII)
 		hasDMARC := false
 		for _, r := range existingRecords {
 			if r.Type == "TXT" && r.Name == "_dmarc" {

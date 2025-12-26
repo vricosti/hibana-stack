@@ -261,6 +261,22 @@
         UNIQUE(domain_id, name)
       );
 
+      CREATE TABLE IF NOT EXISTS dns_backup (
+        id SERIAL PRIMARY KEY,
+        domain_name VARCHAR(255) NOT NULL,
+        provider VARCHAR(50) NOT NULL,
+        record_type VARCHAR(10) NOT NULL,
+        record_name VARCHAR(255) NOT NULL,
+        record_content TEXT NOT NULL,
+        record_ttl INTEGER,
+        record_priority INTEGER,
+        backup_reason VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS dns_backup_domain_idx ON dns_backup(domain_name);
+      CREATE INDEX IF NOT EXISTS dns_backup_created_idx ON dns_backup(created_at);
+
       -- Grant all privileges to hibana user
       GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO hibana;
       GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO hibana;
