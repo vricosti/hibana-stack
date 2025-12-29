@@ -2,23 +2,234 @@ package dnsprovider
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ovh/go-ovh/ovh"
 	"golang.org/x/net/idna"
 )
 
-// OVHCloudProvider implements DNS provider for OVHcloud
-type OVHCloudProvider struct {
-	client *ovh.Client
+// ============================================================================
+// Provider Registration
+// ============================================================================
+
+func init() {
+	Register(ProviderRegistration{
+		Name:            "ovhcloud",
+		DisplayName:     "OVHcloud",
+		Factory:         newOVHCloudProviderFromCreds,
+		PrompterFactory: func() CredentialPrompter { return &OVHCloudPrompter{} },
+		CredsFromMap:    ovhcloudCredsFromMap,
+		SupportsMail:    true,
+		SupportsPTR:     false,
+		SupportsNS:      false,
+	})
 }
 
-// OVHCloudCredentials holds OVHcloud API credentials
+// ============================================================================
+// Credentials
+// ============================================================================
+
+// OVHCloudCredentials holds OVHcloud API credentials and implements Credentials interface
 type OVHCloudCredentials struct {
 	Endpoint          string
 	ApplicationKey    string
 	ApplicationSecret string
 	ConsumerKey       string
+}
+
+// Validate checks if all required fields are present
+func (c *OVHCloudCredentials) Validate() error {
+	if c.ApplicationKey == "" {
+		return fmt.Errorf("application_key is required for OVHcloud")
+	}
+	if c.ApplicationSecret == "" {
+		return fmt.Errorf("application_secret is required for OVHcloud")
+	}
+	if c.ConsumerKey == "" {
+		return fmt.Errorf("consumer_key is required for OVHcloud")
+	}
+	if c.Endpoint == "" {
+		c.Endpoint = "ovh-eu" // Default endpoint
+	}
+	return nil
+}
+
+// ProviderName returns the provider identifier
+func (c *OVHCloudCredentials) ProviderName() string {
+	return "ovhcloud"
+}
+
+// ToYAMLFields returns the credential fields for YAML config generation
+func (c *OVHCloudCredentials) ToYAMLFields() map[string]string {
+	return map[string]string{
+		"endpoint":           c.Endpoint,
+		"application_key":    c.ApplicationKey,
+		"application_secret": c.ApplicationSecret,
+		"consumer_key":       c.ConsumerKey,
+	}
+}
+
+// ovhcloudCredsFromMap creates OVHCloudCredentials from a map
+func ovhcloudCredsFromMap(m map[string]string) (Credentials, error) {
+	creds := &OVHCloudCredentials{
+		Endpoint:          m["endpoint"],
+		ApplicationKey:    m["application_key"],
+		ApplicationSecret: m["application_secret"],
+		ConsumerKey:       m["consumer_key"],
+	}
+	if err := creds.Validate(); err != nil {
+		return nil, err
+	}
+	return creds, nil
+}
+
+// ============================================================================
+// Credential Prompter
+// ============================================================================
+
+// OVHCloudPrompter implements CredentialPrompter for OVHcloud
+type OVHCloudPrompter struct{}
+
+// PromptFields returns the list of fields to prompt for
+func (p *OVHCloudPrompter) PromptFields() []CredentialField {
+	return []CredentialField{
+		{
+			Key:      "application_key",
+			Label:    "Application Key",
+			Required: true,
+			Secret:   false,
+		},
+		{
+			Key:      "application_secret",
+			Label:    "Application Secret",
+			Required: true,
+			Secret:   true,
+		},
+		{
+			Key:      "consumer_key",
+			Label:    "Consumer Key",
+			Required: true,
+			Secret:   true,
+		},
+	}
+}
+
+// CreateCredentials builds Credentials from user input values
+func (p *OVHCloudPrompter) CreateCredentials(values map[string]string) (Credentials, error) {
+	return ovhcloudCredsFromMap(values)
+}
+
+// SetupInstructions returns provider-specific setup instructions
+func (p *OVHCloudPrompter) SetupInstructions() string {
+	return `To get your OVHcloud API credentials:
+1. Go to: https://manager.eu.ovhcloud.com/#/iam/api-keys/onboarding
+2. Fill in the following permissions (add each line separately):
+   GET    /domain/zone
+   GET    /domain/zone/*
+   POST   /domain/zone/*
+   PUT    /domain/zone/*
+   DELETE /domain/zone/*
+3. Set validity to 'Unlimited' for permanent access
+4. Copy the three keys generated`
+}
+
+// newOVHCloudProviderFromCreds creates an OVHCloudProvider from Credentials interface
+func newOVHCloudProviderFromCreds(creds Credentials) (Provider, error) {
+	ovhCreds, ok := creds.(*OVHCloudCredentials)
+	if !ok {
+		return nil, fmt.Errorf("invalid credentials type for OVHcloud, expected *OVHCloudCredentials")
+	}
+	return NewOVHCloudProvider(*ovhCreds)
+}
+
+// ============================================================================
+// Provider Interface Implementation
+// ============================================================================
+
+// OVHCloudProvider implements DNS provider for OVHcloud
+type OVHCloudProvider struct {
+	client *ovh.Client
+}
+
+// Name returns the provider identifier
+func (o *OVHCloudProvider) Name() string {
+	return "ovhcloud"
+}
+
+// DisplayName returns the human-readable provider name
+func (o *OVHCloudProvider) DisplayName() string {
+	return "OVHcloud"
+}
+
+// GetRecordsNormalized retrieves all DNS records in normalized format (implements Provider interface)
+func (o *OVHCloudProvider) GetRecordsNormalized(domain string) ([]DNSRecord, error) {
+	records, err := o.GetRecords(domain)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]DNSRecord, len(records))
+	for i, r := range records {
+		result[i] = DNSRecord{
+			ID:      strconv.FormatInt(r.ID, 10),
+			Type:    r.FieldType,
+			Name:    r.SubDomain,
+			Content: r.Target,
+			TTL:     r.TTL,
+		}
+	}
+	return result, nil
+}
+
+// CreateRecordNormalized adds a new DNS record (implements Provider interface)
+func (o *OVHCloudProvider) CreateRecordNormalized(domain string, record DNSRecord) error {
+	ovhRecord := OVHRecord{
+		FieldType: record.Type,
+		SubDomain: record.Name,
+		Target:    record.Content,
+		TTL:       record.TTL,
+	}
+	return o.CreateRecord(domain, ovhRecord)
+}
+
+// UpdateRecordNormalized modifies an existing DNS record (implements Provider interface)
+func (o *OVHCloudProvider) UpdateRecordNormalized(domain string, recordID string, record DNSRecord) error {
+	id, err := strconv.ParseInt(recordID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid record ID: %w", err)
+	}
+	ovhRecord := OVHRecord{
+		FieldType: record.Type,
+		SubDomain: record.Name,
+		Target:    record.Content,
+		TTL:       record.TTL,
+	}
+	return o.UpdateRecord(domain, id, ovhRecord)
+}
+
+// DeleteRecordNormalized removes a DNS record by ID (implements Provider interface)
+func (o *OVHCloudProvider) DeleteRecordNormalized(domain string, recordID string) error {
+	id, err := strconv.ParseInt(recordID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid record ID: %w", err)
+	}
+	return o.DeleteRecord(domain, id)
+}
+
+// ReplaceRecords replaces all records (implements Provider interface)
+func (o *OVHCloudProvider) ReplaceRecords(domain string, records []DNSRecord) error {
+	for _, r := range records {
+		ovhRecord := OVHRecord{
+			FieldType: r.Type,
+			SubDomain: r.Name,
+			Target:    r.Content,
+			TTL:       r.TTL,
+		}
+		if err := o.ReplaceOrCreateRecord(domain, ovhRecord); err != nil {
+			return err
+		}
+	}
+	return o.RefreshZone(domain)
 }
 
 // OVHRecord represents a DNS record in OVHcloud

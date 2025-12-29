@@ -28,31 +28,24 @@ func InteractiveConfig() (*config.Config, error) {
 		return nil, fmt.Errorf("domain name is required")
 	}
 
-	// Step 2: DNS Provider
-	fmt.Print("\nDNS Provider (ovhcloud | hostinger): ")
+	// Step 2: DNS Provider - use registry to list available providers
+	supportedProviders := dnsprovider.SupportedProviderNames()
+	fmt.Printf("\nDNS Provider (%s): ", supportedProviders)
 	providerInput, err := reader.ReadString('\n')
 	if err != nil {
 		return nil, fmt.Errorf("failed to read DNS provider: %w", err)
 	}
 	providerName := strings.ToLower(strings.TrimSpace(providerInput))
 
-	var dnsProvider *config.DNSProviderConfig
+	// Handle alias
+	if providerName == "ovh" {
+		providerName = "ovhcloud"
+	}
 
-	switch providerName {
-	case "hostinger":
-		dnsProvider, err = promptHostingerCredentials(reader, domainName)
-		if err != nil {
-			return nil, err
-		}
-
-	case "ovhcloud", "ovh":
-		dnsProvider, err = promptOVHCloudCredentials(reader, domainName)
-		if err != nil {
-			return nil, err
-		}
-
-	default:
-		return nil, fmt.Errorf("unsupported DNS provider: %s (supported: ovhcloud, hostinger)", providerName)
+	// Use the registry to prompt for credentials
+	dnsProvider, err := promptProviderCredentials(reader, providerName, domainName)
+	if err != nil {
+		return nil, err
 	}
 
 	// Detect server IP
@@ -101,7 +94,68 @@ func InteractiveConfig() (*config.Config, error) {
 	return cfg, nil
 }
 
+// promptProviderCredentials prompts for provider credentials using the registry
+func promptProviderCredentials(reader *bufio.Reader, providerName, domain string) (*config.DNSProviderConfig, error) {
+	// Get the prompter from registry
+	prompter, err := dnsprovider.GetPrompter(providerName)
+	if err != nil {
+		return nil, fmt.Errorf("unsupported DNS provider: %s (supported: %s)", providerName, dnsprovider.SupportedProviderNames())
+	}
+
+	// Display setup instructions
+	fmt.Println("\n" + strings.Repeat("=", 70))
+	fmt.Printf("%s Configuration\n", strings.ToUpper(providerName))
+	fmt.Println(strings.Repeat("=", 70))
+	fmt.Println(prompter.SetupInstructions())
+	fmt.Println(strings.Repeat("=", 70))
+
+	fmt.Print("\nPress Enter when you have your credentials ready...")
+	reader.ReadString('\n')
+
+	// Collect credential values
+	values := make(map[string]string)
+	for _, field := range prompter.PromptFields() {
+		fmt.Printf("\n%s: ", field.Label)
+		value, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, fmt.Errorf("failed to read %s: %w", field.Label, err)
+		}
+		value = strings.TrimSpace(value)
+		if field.Required && value == "" {
+			return nil, fmt.Errorf("%s is required", field.Label)
+		}
+		values[field.Key] = value
+	}
+
+	// Create credentials and validate
+	creds, err := prompter.CreateCredentials(values)
+	if err != nil {
+		return nil, fmt.Errorf("invalid credentials: %w", err)
+	}
+
+	// Create provider and verify domain
+	fmt.Println("\nVerifying credentials and domain ownership...")
+	provider, err := dnsprovider.CreateProvider(creds)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to %s: %w", providerName, err)
+	}
+
+	if err := provider.VerifyDomainManaged(domain); err != nil {
+		return nil, fmt.Errorf("domain verification failed: %w", err)
+	}
+
+	fmt.Printf("\n  %s credentials verified successfully\n", providerName)
+
+	// Return config using new Credentials format
+	return &config.DNSProviderConfig{
+		Type:        "external",
+		Name:        providerName,
+		Credentials: creds.ToYAMLFields(),
+	}, nil
+}
+
 // promptHostingerCredentials prompts for Hostinger API token and verifies it
+// Deprecated: Use promptProviderCredentials instead
 func promptHostingerCredentials(reader *bufio.Reader, domain string) (*config.DNSProviderConfig, error) {
 	fmt.Print("\nEnter your Hostinger API Token: ")
 	apiToken, err := reader.ReadString('\n')
@@ -133,7 +187,7 @@ func promptOVHCloudCredentials(reader *bufio.Reader, domain string) (*config.DNS
 	fmt.Println("OVHcloud API Configuration")
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println("\nTo use OVHcloud DNS, you need to create API credentials.")
-	fmt.Println("\n1. Go to: https://www.ovh.com/auth/api/createToken")
+	fmt.Println("\n1. Go to: https://manager.eu.ovhcloud.com/#/iam/api-keys/onboarding")
 	fmt.Println("\n2. Fill in the following permissions (add each line separately):")
 	fmt.Println("   GET    /domain/zone")
 	fmt.Println("   GET    /domain/zone/*")
@@ -249,16 +303,24 @@ dns_provider:
   name: %s
 `, cfg.ServerIP, cfg.DNSProvider.Type, cfg.DNSProvider.Name)
 
-	// Add provider-specific credentials
-	if cfg.DNSProvider.Name == "hostinger" {
-		data += fmt.Sprintf("  api_token: %s\n", cfg.DNSProvider.APIToken)
-	} else if cfg.DNSProvider.Name == "ovhcloud" {
-		data += fmt.Sprintf(`  endpoint: %s
+	// Add provider credentials using new unified format
+	if cfg.DNSProvider.Credentials != nil && len(cfg.DNSProvider.Credentials) > 0 {
+		data += "  credentials:\n"
+		for key, value := range cfg.DNSProvider.Credentials {
+			data += fmt.Sprintf("    %s: %s\n", key, value)
+		}
+	} else {
+		// Fallback to legacy format for backward compatibility
+		if cfg.DNSProvider.Name == "hostinger" && cfg.DNSProvider.APIToken != "" {
+			data += fmt.Sprintf("  api_token: %s\n", cfg.DNSProvider.APIToken)
+		} else if cfg.DNSProvider.Name == "ovhcloud" && cfg.DNSProvider.ApplicationKey != "" {
+			data += fmt.Sprintf(`  endpoint: %s
   application_key: %s
   application_secret: %s
   consumer_key: %s
 `, cfg.DNSProvider.Endpoint, cfg.DNSProvider.ApplicationKey,
-			cfg.DNSProvider.ApplicationSecret, cfg.DNSProvider.ConsumerKey)
+				cfg.DNSProvider.ApplicationSecret, cfg.DNSProvider.ConsumerKey)
+		}
 	}
 
 	// Add domains

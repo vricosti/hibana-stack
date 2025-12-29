@@ -14,6 +14,203 @@ import (
 	"golang.org/x/net/idna"
 )
 
+// ============================================================================
+// Provider Registration
+// ============================================================================
+
+func init() {
+	Register(ProviderRegistration{
+		Name:            "hostinger",
+		DisplayName:     "Hostinger",
+		Factory:         newHostingerProviderFromCreds,
+		PrompterFactory: func() CredentialPrompter { return &HostingerPrompter{} },
+		CredsFromMap:    hostingerCredsFromMap,
+		SupportsMail:    true,
+		SupportsPTR:     true,
+		SupportsNS:      true,
+	})
+}
+
+// ============================================================================
+// Credentials
+// ============================================================================
+
+// HostingerCredentials implements the Credentials interface for Hostinger
+type HostingerCredentials struct {
+	APIToken string
+}
+
+// Validate checks if all required fields are present
+func (c *HostingerCredentials) Validate() error {
+	if c.APIToken == "" {
+		return fmt.Errorf("api_token is required for Hostinger")
+	}
+	return nil
+}
+
+// ProviderName returns the provider identifier
+func (c *HostingerCredentials) ProviderName() string {
+	return "hostinger"
+}
+
+// ToYAMLFields returns the credential fields for YAML config generation
+func (c *HostingerCredentials) ToYAMLFields() map[string]string {
+	return map[string]string{
+		"api_token": c.APIToken,
+	}
+}
+
+// hostingerCredsFromMap creates HostingerCredentials from a map
+func hostingerCredsFromMap(m map[string]string) (Credentials, error) {
+	creds := &HostingerCredentials{
+		APIToken: m["api_token"],
+	}
+	if err := creds.Validate(); err != nil {
+		return nil, err
+	}
+	return creds, nil
+}
+
+// ============================================================================
+// Credential Prompter
+// ============================================================================
+
+// HostingerPrompter implements CredentialPrompter for Hostinger
+type HostingerPrompter struct{}
+
+// PromptFields returns the list of fields to prompt for
+func (p *HostingerPrompter) PromptFields() []CredentialField {
+	return []CredentialField{
+		{
+			Key:      "api_token",
+			Label:    "Hostinger API Token",
+			Required: true,
+			Secret:   true,
+			HelpText: "Get your API token from Hostinger Dashboard > API",
+		},
+	}
+}
+
+// CreateCredentials builds Credentials from user input values
+func (p *HostingerPrompter) CreateCredentials(values map[string]string) (Credentials, error) {
+	return hostingerCredsFromMap(values)
+}
+
+// SetupInstructions returns provider-specific setup instructions
+func (p *HostingerPrompter) SetupInstructions() string {
+	return `To get your Hostinger API token:
+1. Log in to Hostinger Dashboard (https://hpanel.hostinger.com)
+2. Go to Account > API tokens
+3. Create a new API token with DNS permissions`
+}
+
+// newHostingerProviderFromCreds creates a HostingerProvider from Credentials interface
+func newHostingerProviderFromCreds(creds Credentials) (Provider, error) {
+	hCreds, ok := creds.(*HostingerCredentials)
+	if !ok {
+		return nil, fmt.Errorf("invalid credentials type for Hostinger, expected *HostingerCredentials")
+	}
+	return NewHostingerProvider(hCreds.APIToken), nil
+}
+
+// ============================================================================
+// Provider Interface Implementation
+// ============================================================================
+
+// Name returns the provider identifier
+func (h *HostingerProvider) Name() string {
+	return "hostinger"
+}
+
+// DisplayName returns the human-readable provider name
+func (h *HostingerProvider) DisplayName() string {
+	return "Hostinger"
+}
+
+// RefreshZone triggers a zone refresh/reload (implements Provider interface)
+func (h *HostingerProvider) RefreshZone(domain string) error {
+	// Hostinger doesn't have explicit zone refresh - it's automatic
+	return nil
+}
+
+// ============================================================================
+// RecordProvider Interface Implementation (Normalized methods)
+// ============================================================================
+
+// GetRecordsNormalized retrieves all DNS records in normalized format (implements RecordProvider)
+func (h *HostingerProvider) GetRecordsNormalized(domain string) ([]DNSRecord, error) {
+	records, err := h.getRecords(domain)
+	if err != nil {
+		return nil, err
+	}
+	// Convert HostingerRecord to DNSRecord
+	result := make([]DNSRecord, len(records))
+	for i, r := range records {
+		result[i] = DNSRecord{
+			ID:      r.ID,
+			Type:    r.Type,
+			Name:    r.Name,
+			Content: r.Content,
+			TTL:     r.TTL,
+		}
+	}
+	return result, nil
+}
+
+// CreateRecordNormalized adds a new DNS record (implements RecordProvider)
+func (h *HostingerProvider) CreateRecordNormalized(domain string, record DNSRecord) error {
+	hRecord := HostingerRecord{
+		Type:    record.Type,
+		Name:    record.Name,
+		Content: record.Content,
+		TTL:     record.TTL,
+	}
+	return h.updateRecords(domain, []HostingerRecord{hRecord})
+}
+
+// UpdateRecordNormalized modifies an existing DNS record (implements RecordProvider)
+func (h *HostingerProvider) UpdateRecordNormalized(domain string, recordID string, record DNSRecord) error {
+	// Hostinger doesn't have direct update - use replace
+	hRecord := HostingerRecord{
+		ID:      recordID,
+		Type:    record.Type,
+		Name:    record.Name,
+		Content: record.Content,
+		TTL:     record.TTL,
+	}
+	return h.replaceRecords(domain, []HostingerRecord{hRecord})
+}
+
+// DeleteRecordNormalized removes a DNS record by ID (implements RecordProvider)
+func (h *HostingerProvider) DeleteRecordNormalized(domain string, recordID string) error {
+	// Hostinger doesn't support delete by ID directly
+	// We need to get the record details first and then delete by name/type
+	records, err := h.getRecords(domain)
+	if err != nil {
+		return err
+	}
+	for _, r := range records {
+		if r.ID == recordID {
+			return h.deleteRecordByNameType(domain, r.Name, r.Type)
+		}
+	}
+	return fmt.Errorf("record with ID %s not found", recordID)
+}
+
+// ReplaceRecords replaces all records of specified types (implements RecordProvider)
+func (h *HostingerProvider) ReplaceRecords(domain string, records []DNSRecord) error {
+	hRecords := make([]HostingerRecord, len(records))
+	for i, r := range records {
+		hRecords[i] = HostingerRecord{
+			Type:    r.Type,
+			Name:    r.Name,
+			Content: r.Content,
+			TTL:     r.TTL,
+		}
+	}
+	return h.replaceRecords(domain, hRecords)
+}
+
 const (
 	hostingerAPIBaseURL    = "https://developers.hostinger.com"
 	hostingerDNSAPIURL     = "https://developers.hostinger.com/api/dns/v1"
@@ -349,8 +546,9 @@ func (h *HostingerProvider) AddRecords(domain string, records []HostingerRecord)
 	return h.updateRecords(domain, records)
 }
 
-// ReplaceRecords replaces DNS records for the domain (overwrites existing records of same name/type)
-func (h *HostingerProvider) ReplaceRecords(domain string, records []HostingerRecord) error {
+// ReplaceHostingerRecords replaces DNS records for the domain (overwrites existing records of same name/type)
+// Kept for backward compatibility - use ReplaceRecords for normalized interface
+func (h *HostingerProvider) ReplaceHostingerRecords(domain string, records []HostingerRecord) error {
 	return h.replaceRecords(domain, records)
 }
 
@@ -428,8 +626,13 @@ func (h *HostingerProvider) DeleteCNAMEAndCreateA(domain, name, ip string) error
 	})
 }
 
-// DeleteRecord deletes a DNS record from a domain
-func (h *HostingerProvider) DeleteRecord(domain, name, recordType string) error {
+// DeleteRecordByNameType deletes a DNS record from a domain by name and type (public for backward compatibility)
+func (h *HostingerProvider) DeleteRecordByNameType(domain, name, recordType string) error {
+	return h.deleteRecordByNameType(domain, name, recordType)
+}
+
+// deleteRecordByNameType deletes a DNS record from a domain by name and type
+func (h *HostingerProvider) deleteRecordByNameType(domain, name, recordType string) error {
 	// Convert domain to punycode for API calls
 	domainASCII, err := toPunycode(domain)
 	if err != nil {
@@ -699,18 +902,6 @@ func VerifyDomainOwnership(providerName, apiToken, domain string) error {
 	default:
 		return fmt.Errorf("unsupported DNS provider: %s", providerName)
 	}
-}
-
-// DomainConfig holds domain configuration for DNS updates
-type DomainConfig struct {
-	Name       string
-	Subdomains []SubdomainConfig
-}
-
-// SubdomainConfig holds subdomain configuration
-type SubdomainConfig struct {
-	Name string
-	Role string
 }
 
 // UpdateDNSRecords updates DNS records for the given domain and server IP

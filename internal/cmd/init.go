@@ -82,7 +82,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if cfg.DNSProvider != nil && cfg.DNSProvider.Type != "manual" {
 		// Verify ownership of all domains
 		for _, domain := range cfg.Domains {
-			if err := dnsprovider.VerifyDomainOwnership(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, domain.Name); err != nil {
+			if err := dnsprovider.VerifyDomainOwnership(cfg.DNSProvider.Name, cfg.DNSProvider.GetCredentialValue("api_token"), domain.Name); err != nil {
 				return fmt.Errorf("DNS provider verification failed for %s: %w\n\nPlease verify:\n  - Your API token is valid\n  - Domain %s is managed by your %s account\n  - The API has proper permissions", domain.Name, err, domain.Name, cfg.DNSProvider.Name)
 			}
 		}
@@ -183,16 +183,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 			// Use OVH-specific function if provider is OVH
 			if cfg.DNSProvider.Name == "ovh" || cfg.DNSProvider.Name == "ovhcloud" {
 				ovhCreds := dnsprovider.OVHCloudCredentials{
-					Endpoint:          cfg.DNSProvider.Endpoint,
-					ApplicationKey:    cfg.DNSProvider.ApplicationKey,
-					ApplicationSecret: cfg.DNSProvider.ApplicationSecret,
-					ConsumerKey:       cfg.DNSProvider.ConsumerKey,
+					Endpoint:          cfg.DNSProvider.GetCredentialValue("endpoint"),
+					ApplicationKey:    cfg.DNSProvider.GetCredentialValue("application_key"),
+					ApplicationSecret: cfg.DNSProvider.GetCredentialValue("application_secret"),
+					ConsumerKey:       cfg.DNSProvider.GetCredentialValue("consumer_key"),
 				}
 				if err := dnsprovider.UpdateDNSRecordsPreInstallOVH(ovhCreds, domainCfg, cfg.ServerIP); err != nil {
 					return fmt.Errorf("DNS pre-install configuration failed for %s: %w\n\nPlease check your DNS provider settings and try again.", domain.Name, err)
 				}
 			} else {
-				if err := dnsprovider.UpdateDNSRecordsPreInstall(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.APIToken, domainCfg, cfg.ServerIP); err != nil {
+				if err := dnsprovider.UpdateDNSRecordsPreInstall(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.GetCredentialValue("api_token"), domainCfg, cfg.ServerIP); err != nil {
 					return fmt.Errorf("DNS pre-install configuration failed for %s: %w\n\nPlease check your DNS provider settings and try again.", domain.Name, err)
 				}
 			}
@@ -264,16 +264,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 			// Use OVH-specific function if provider is OVH
 			if cfg.DNSProvider.Name == "ovh" || cfg.DNSProvider.Name == "ovhcloud" {
 				ovhCreds := dnsprovider.OVHCloudCredentials{
-					Endpoint:          cfg.DNSProvider.Endpoint,
-					ApplicationKey:    cfg.DNSProvider.ApplicationKey,
-					ApplicationSecret: cfg.DNSProvider.ApplicationSecret,
-					ConsumerKey:       cfg.DNSProvider.ConsumerKey,
+					Endpoint:          cfg.DNSProvider.GetCredentialValue("endpoint"),
+					ApplicationKey:    cfg.DNSProvider.GetCredentialValue("application_key"),
+					ApplicationSecret: cfg.DNSProvider.GetCredentialValue("application_secret"),
+					ConsumerKey:       cfg.DNSProvider.GetCredentialValue("consumer_key"),
 				}
 				if err := dnsprovider.UpdateDNSRecordsPostInstallOVH(ovhCreds, domainCfg, cfg.ServerIP); err != nil {
 					fmt.Printf("\n  Warning: DNS post-install configuration failed for %s: %v\n", domain.Name, err)
 				}
 			} else {
-				if err := dnsprovider.UpdateDNSRecordsPostInstall(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.APIToken, domainCfg, cfg.ServerIP); err != nil {
+				if err := dnsprovider.UpdateDNSRecordsPostInstall(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.GetCredentialValue("api_token"), domainCfg, cfg.ServerIP); err != nil {
 					fmt.Printf("\n  Warning: DNS post-install configuration failed for %s: %v\n", domain.Name, err)
 				}
 			}
@@ -281,7 +281,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 		// Configure PTR records if mailserver role is enabled on primary domain
 		if primaryDomain.HasSubdomainRole("mailserver") {
-			if err := dnsprovider.ConfigurePTR(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, cfg.ServerIP, primaryDomain.Name); err != nil {
+			if err := dnsprovider.ConfigurePTR(cfg.DNSProvider.Name, cfg.DNSProvider.GetCredentialValue("api_token"), cfg.ServerIP, primaryDomain.Name); err != nil {
 				fmt.Printf("\n  Warning: PTR configuration failed: %v\n", err)
 			}
 		}
@@ -299,16 +299,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 				// Add DKIM record to DNS
 				if cfg.DNSProvider.Name == "ovh" || cfg.DNSProvider.Name == "ovhcloud" {
 					ovhCreds := dnsprovider.OVHCloudCredentials{
-						Endpoint:          cfg.DNSProvider.Endpoint,
-						ApplicationKey:    cfg.DNSProvider.ApplicationKey,
-						ApplicationSecret: cfg.DNSProvider.ApplicationSecret,
-						ConsumerKey:       cfg.DNSProvider.ConsumerKey,
+						Endpoint:          cfg.DNSProvider.GetCredentialValue("endpoint"),
+						ApplicationKey:    cfg.DNSProvider.GetCredentialValue("application_key"),
+						ApplicationSecret: cfg.DNSProvider.GetCredentialValue("application_secret"),
+						ConsumerKey:       cfg.DNSProvider.GetCredentialValue("consumer_key"),
 					}
 					if err := dnsprovider.AddDKIMRecordOVH(ovhCreds, domain.Name, dkimKey); err != nil {
 						fmt.Printf("\n  Warning: Could not add DKIM record for %s: %v\n", domain.Name, err)
 					}
 				} else {
-					if err := dnsprovider.AddDKIMRecord(cfg.DNSProvider.Name, cfg.DNSProvider.APIToken, domain.Name, dkimKey); err != nil {
+					if err := dnsprovider.AddDKIMRecord(cfg.DNSProvider.Name, cfg.DNSProvider.GetCredentialValue("api_token"), domain.Name, dkimKey); err != nil {
 						fmt.Printf("\n  Warning: Could not add DKIM record for %s: %v\n", domain.Name, err)
 					}
 				}

@@ -505,7 +505,7 @@ func (s *ServiceService) deleteSubdomainDNSRecord(domainName, subdomainName stri
 			return fmt.Errorf("Hostinger API token not configured")
 		}
 		provider := dnsprovider.NewHostingerProvider(apiToken)
-		return provider.DeleteRecord(domainName, subdomainName, "A")
+		return provider.DeleteRecordByNameType(domainName, subdomainName, "A")
 
 	case "powerdns":
 		// For local PowerDNS, delete from the database
