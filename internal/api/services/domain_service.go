@@ -368,7 +368,7 @@ func (s *DomainService) updateExternalDNS(domainName, serverIP, providerName, ap
 				TTL:     300,
 			},
 		}
-		return provider.ReplaceRecords(domainName, records)
+		return provider.ReplaceHostingerRecords(domainName, records)
 
 	default:
 		return fmt.Errorf("unsupported DNS provider: %s", providerName)

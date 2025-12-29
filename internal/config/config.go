@@ -19,15 +19,71 @@ type Config struct {
 
 // DNSProviderConfig represents DNS provider configuration
 type DNSProviderConfig struct {
-	Type     string `yaml:"type"`                // "local", "external", or "manual"
-	Name     string `yaml:"name,omitempty"`      // Provider name: hostinger, cloudflare, ovhcloud
-	APIToken string `yaml:"api_token,omitempty"` // API token (for hostinger, cloudflare)
+	Type string `yaml:"type"`           // "local", "external", or "manual"
+	Name string `yaml:"name,omitempty"` // Provider name: hostinger, cloudflare, ovhcloud
 
-	// OVH-specific credentials (from https://eu.api.ovh.com/createToken/)
-	Endpoint          string `yaml:"endpoint,omitempty"`           // OVH endpoint: ovh-eu, ovh-ca, ovh-us, etc.
-	ApplicationKey    string `yaml:"application_key,omitempty"`    // OVH application key
-	ApplicationSecret string `yaml:"application_secret,omitempty"` // OVH application secret
-	ConsumerKey       string `yaml:"consumer_key,omitempty"`       // OVH consumer key
+	// New unified credentials format (preferred)
+	Credentials map[string]string `yaml:"credentials,omitempty"`
+
+	// Legacy fields for backward compatibility (will be migrated to Credentials)
+	APIToken          string `yaml:"api_token,omitempty"`          // Legacy: API token (for hostinger, cloudflare)
+	Endpoint          string `yaml:"endpoint,omitempty"`           // Legacy: OVH endpoint
+	ApplicationKey    string `yaml:"application_key,omitempty"`    // Legacy: OVH application key
+	ApplicationSecret string `yaml:"application_secret,omitempty"` // Legacy: OVH application secret
+	ConsumerKey       string `yaml:"consumer_key,omitempty"`       // Legacy: OVH consumer key
+}
+
+// Migrate converts legacy credential fields to the new unified Credentials map
+// This is called automatically during config loading for backward compatibility
+func (d *DNSProviderConfig) Migrate() {
+	// Skip if already using new format
+	if d.Credentials != nil && len(d.Credentials) > 0 {
+		return
+	}
+
+	d.Credentials = make(map[string]string)
+
+	// Migrate legacy fields
+	if d.APIToken != "" {
+		d.Credentials["api_token"] = d.APIToken
+	}
+	if d.Endpoint != "" {
+		d.Credentials["endpoint"] = d.Endpoint
+	}
+	if d.ApplicationKey != "" {
+		d.Credentials["application_key"] = d.ApplicationKey
+	}
+	if d.ApplicationSecret != "" {
+		d.Credentials["application_secret"] = d.ApplicationSecret
+	}
+	if d.ConsumerKey != "" {
+		d.Credentials["consumer_key"] = d.ConsumerKey
+	}
+}
+
+// GetCredentialValue returns a credential value by key, handling both old and new formats
+func (d *DNSProviderConfig) GetCredentialValue(key string) string {
+	// Try new format first
+	if d.Credentials != nil {
+		if val, ok := d.Credentials[key]; ok {
+			return val
+		}
+	}
+
+	// Fallback to legacy fields
+	switch key {
+	case "api_token":
+		return d.APIToken
+	case "endpoint":
+		return d.Endpoint
+	case "application_key":
+		return d.ApplicationKey
+	case "application_secret":
+		return d.ApplicationSecret
+	case "consumer_key":
+		return d.ConsumerKey
+	}
+	return ""
 }
 
 // Domain represents a domain configuration
@@ -92,6 +148,11 @@ func LoadConfig(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Migrate DNS provider credentials from legacy format
+	if cfg.DNSProvider != nil {
+		cfg.DNSProvider.Migrate()
 	}
 
 	// Validate configuration
@@ -174,25 +235,31 @@ func (d *DNSProviderConfig) Validate() error {
 			return fmt.Errorf("name is required for type '%s'", d.Type)
 		}
 
-		// Validate credentials based on provider
+		// Validate credentials using GetCredentialValue (works with both old and new formats)
 		switch d.Name {
 		case "hostinger", "cloudflare":
-			if d.APIToken == "" {
+			if d.GetCredentialValue("api_token") == "" {
 				return fmt.Errorf("api_token is required for provider '%s'", d.Name)
 			}
 		case "ovhcloud":
-			if d.ApplicationKey == "" {
+			if d.GetCredentialValue("application_key") == "" {
 				return fmt.Errorf("application_key is required for provider 'ovhcloud'")
 			}
-			if d.ApplicationSecret == "" {
+			if d.GetCredentialValue("application_secret") == "" {
 				return fmt.Errorf("application_secret is required for provider 'ovhcloud'")
 			}
-			if d.ConsumerKey == "" {
+			if d.GetCredentialValue("consumer_key") == "" {
 				return fmt.Errorf("consumer_key is required for provider 'ovhcloud'")
 			}
-			// Set default endpoint if not specified
-			if d.Endpoint == "" {
-				d.Endpoint = "ovh-eu"
+			// Set default endpoint if not specified (in both legacy and new format)
+			endpoint := d.GetCredentialValue("endpoint")
+			if endpoint == "" {
+				endpoint = "ovh-eu"
+				if d.Credentials != nil {
+					d.Credentials["endpoint"] = endpoint
+				} else {
+					d.Endpoint = endpoint
+				}
 			}
 			// Validate endpoint
 			validEndpoints := map[string]bool{
@@ -200,8 +267,8 @@ func (d *DNSProviderConfig) Validate() error {
 				"soyoustart-eu": true, "soyoustart-ca": true,
 				"kimsufi-eu": true, "kimsufi-ca": true,
 			}
-			if !validEndpoints[d.Endpoint] {
-				return fmt.Errorf("invalid OVH endpoint '%s' (valid: ovh-eu, ovh-ca, ovh-us, soyoustart-eu, soyoustart-ca, kimsufi-eu, kimsufi-ca)", d.Endpoint)
+			if !validEndpoints[endpoint] {
+				return fmt.Errorf("invalid OVH endpoint '%s' (valid: ovh-eu, ovh-ca, ovh-us, soyoustart-eu, soyoustart-ca, kimsufi-eu, kimsufi-ca)", endpoint)
 			}
 		default:
 			return fmt.Errorf("unsupported DNS provider '%s' (supported: hostinger, cloudflare, ovhcloud)", d.Name)
