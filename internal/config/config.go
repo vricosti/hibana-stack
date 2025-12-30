@@ -327,6 +327,17 @@ func (d *Domain) GetSubdomainByRole(role string) *Subdomain {
 	return nil
 }
 
+// GetMailserverSubdomain returns the mailserver subdomain name from the primary domain
+// Returns "mx" as default if not found
+func (c *Config) GetMailserverSubdomain() string {
+	if primary := c.GetPrimaryDomain(); primary != nil {
+		if sub := primary.GetSubdomainByRole("mailserver"); sub != nil {
+			return sub.Name
+		}
+	}
+	return "mx" // default fallback
+}
+
 // GenerateSkeleton creates a skeleton configuration
 func GenerateSkeleton() *Config {
 	return &Config{
@@ -342,7 +353,7 @@ func GenerateSkeleton() *Config {
 				IsPrimary: true,
 				Subdomains: []Subdomain{
 					{Name: "adm", Role: "webadmin"},
-					{Name: "mail", Role: "mailserver"},
+					{Name: "mx", Role: "mailserver"},
 					{Name: "webmail", Role: "webmail"},
 					{Name: "www", Role: "website"},
 				},
@@ -373,7 +384,8 @@ func (c *Config) GetDNSRecords(domain *Domain, dkimPublicKey string) []DNSRecord
 	serial := time.Now().Format("2006010215") // YYYYMMDDnn format
 
 	primaryDomain := c.GetPrimaryDomainName()
-	mailServer := fmt.Sprintf("mx.%s", primaryDomain)
+	mailserverSubdomain := c.GetMailserverSubdomain()
+	mailServer := fmt.Sprintf("%s.%s", mailserverSubdomain, primaryDomain)
 
 	records := []DNSRecord{
 		// SOA record (required for PowerDNS to be authoritative)

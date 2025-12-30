@@ -21,7 +21,7 @@ func init() {
 		PrompterFactory: func() CredentialPrompter { return &OVHCloudPrompter{} },
 		CredsFromMap:    ovhcloudCredsFromMap,
 		SupportsMail:    true,
-		SupportsPTR:     false,
+		SupportsPTR:     true,
 		SupportsNS:      false,
 	})
 }
@@ -125,11 +125,21 @@ func (p *OVHCloudPrompter) SetupInstructions() string {
 	return `To get your OVHcloud API credentials:
 1. Go to: https://manager.eu.ovhcloud.com/#/iam/api-keys/onboarding
 2. Fill in the following permissions (add each line separately):
+
+   DNS Zone Management:
    GET    /domain/zone
    GET    /domain/zone/*
    POST   /domain/zone/*
    PUT    /domain/zone/*
    DELETE /domain/zone/*
+
+   IP/PTR Management (for reverse DNS):
+   GET    /ip
+   GET    /ip/*
+   POST   /ip/*
+   PUT    /ip/*
+   DELETE /ip/*
+
 3. Set validity to 'Unlimited' for permanent access
 4. Copy the three keys generated`
 }
@@ -494,7 +504,11 @@ func (o *OVHCloudProvider) DeleteRecordByTypeAndSubdomain(domain, recordType, su
 }
 
 // ConfigureMailRecords configures MX, SPF, and DMARC records for mail
-func (o *OVHCloudProvider) ConfigureMailRecords(domain, serverIP string) error {
+func (o *OVHCloudProvider) ConfigureMailRecords(domain, serverIP, mailserverSubdomain string) error {
+	if mailserverSubdomain == "" {
+		mailserverSubdomain = "mx" // default fallback
+	}
+
 	domainASCII, err := idna.ToASCII(domain)
 	if err != nil {
 		domainASCII = domain
@@ -506,13 +520,13 @@ func (o *OVHCloudProvider) ConfigureMailRecords(domain, serverIP string) error {
 	mxRecord := OVHRecord{
 		FieldType: "MX",
 		SubDomain: "",
-		Target:    fmt.Sprintf("10 mx.%s.", domainASCII),
+		Target:    fmt.Sprintf("10 %s.%s.", mailserverSubdomain, domainASCII),
 		TTL:       14400,
 	}
 	if err := o.ReplaceOrCreateRecord(domain, mxRecord); err != nil {
 		fmt.Printf("    Warning: Failed to create MX record: %v\n", err)
 	} else {
-		fmt.Printf("    MX record: 10 mx.%s\n", domain)
+		fmt.Printf("    MX record: 10 %s.%s\n", mailserverSubdomain, domain)
 	}
 
 	// SPF record
@@ -626,7 +640,7 @@ func (o *OVHCloudProvider) AddDKIMRecord(domain, dkimPublicKey string) error {
 }
 
 // UpdateDNSRecordsPreInstallOVH configures DNS records BEFORE Ansible playbook for OVHcloud
-func UpdateDNSRecordsPreInstallOVH(creds OVHCloudCredentials, domainCfg DomainConfig, serverIP string) error {
+func UpdateDNSRecordsPreInstallOVH(creds OVHCloudCredentials, domainCfg DomainConfig, serverIP, serverIPv6 string) error {
 	domain := domainCfg.Name
 
 	fmt.Printf("\n  [PRE-INSTALL] Configuring OVHcloud DNS for %s...\n", domain)
@@ -656,8 +670,8 @@ func UpdateDNSRecordsPreInstallOVH(creds OVHCloudCredentials, domainCfg DomainCo
 		}
 	}
 
-	// Configure A records
-	fmt.Println("\n  Configuring A records...")
+	// Configure A records (IPv4)
+	fmt.Println("\n  Configuring A records (IPv4)...")
 
 	// Root domain
 	rootRecord := OVHRecord{
@@ -687,27 +701,62 @@ func UpdateDNSRecordsPreInstallOVH(creds OVHCloudCredentials, domainCfg DomainCo
 		}
 	}
 
-	// MX record if mailserver role exists
-	hasMailserver := false
+	// Configure AAAA records (IPv6) if IPv6 is available
+	if serverIPv6 != "" {
+		fmt.Println("\n  Configuring AAAA records (IPv6)...")
+
+		// Root domain AAAA
+		rootAAAARecord := OVHRecord{
+			FieldType: "AAAA",
+			SubDomain: "",
+			Target:    serverIPv6,
+			TTL:       300,
+		}
+		if err := provider.ReplaceOrCreateRecord(domain, rootAAAARecord); err != nil {
+			fmt.Printf("    Warning: Failed to create AAAA record for %s: %v\n", domain, err)
+		} else {
+			fmt.Printf("    %s AAAA %s\n", domain, serverIPv6)
+		}
+
+		// Subdomain AAAA records
+		for _, sub := range domainCfg.Subdomains {
+			subAAAARecord := OVHRecord{
+				FieldType: "AAAA",
+				SubDomain: sub.Name,
+				Target:    serverIPv6,
+				TTL:       300,
+			}
+			if err := provider.ReplaceOrCreateRecord(domain, subAAAARecord); err != nil {
+				fmt.Printf("    Warning: Failed to create AAAA record for %s.%s: %v\n", sub.Name, domain, err)
+			} else {
+				fmt.Printf("    %s.%s AAAA %s\n", sub.Name, domain, serverIPv6)
+			}
+		}
+	} else {
+		fmt.Println("\n  ℹ No IPv6 address detected, skipping AAAA records")
+	}
+
+	// MX record if mailserver role exists and get the subdomain name
+	mailserverSubdomain := ""
 	for _, sub := range domainCfg.Subdomains {
 		if sub.Role == "mailserver" {
-			hasMailserver = true
+			mailserverSubdomain = sub.Name
 			break
 		}
 	}
 
-	if hasMailserver {
+	if mailserverSubdomain != "" {
 		domainASCII, _ := idna.ToASCII(domain)
 		mxRecord := OVHRecord{
 			FieldType: "MX",
 			SubDomain: "",
-			Target:    fmt.Sprintf("10 mx.%s.", domainASCII),
+			Target:    fmt.Sprintf("10 %s.%s.", mailserverSubdomain, domainASCII),
 			TTL:       14400,
 		}
 		if err := provider.ReplaceOrCreateRecord(domain, mxRecord); err != nil {
 			fmt.Printf("    Warning: Failed to create MX record: %v\n", err)
 		} else {
-			fmt.Printf("    %s MX 10 mx.%s\n", domain, domain)
+			fmt.Printf("    %s MX 10 %s.%s\n", domain, mailserverSubdomain, domain)
 		}
 	}
 
@@ -903,4 +952,213 @@ func AddDKIMRecordOVH(creds OVHCloudCredentials, domain, dkimPublicKey string) e
 	}
 
 	return provider.AddDKIMRecord(domain, dkimPublicKey)
+}
+
+// ============================================================================
+// PTR Record (Reverse DNS) Management
+// ============================================================================
+
+// OVHIPBlock represents an IP block in OVH
+type OVHIPBlock struct {
+	IP          string `json:"ip"`
+	Description string `json:"description,omitempty"`
+}
+
+// OVHReverseRecord represents a reverse DNS record in OVH
+type OVHReverseRecord struct {
+	IPReverse string `json:"ipReverse"`
+	Reverse   string `json:"reverse"`
+}
+
+// GetIPBlocks retrieves all IP blocks associated with the OVH account
+func (o *OVHCloudProvider) GetIPBlocks() ([]string, error) {
+	var ipBlocks []string
+	if err := o.client.Get("/ip", &ipBlocks); err != nil {
+		return nil, fmt.Errorf("failed to list IP blocks: %w", err)
+	}
+	return ipBlocks, nil
+}
+
+// FindIPBlock finds the IP block that contains the given IP address
+func (o *OVHCloudProvider) FindIPBlock(targetIP string) (string, error) {
+	ipBlocks, err := o.GetIPBlocks()
+	if err != nil {
+		return "", err
+	}
+
+	// First, try to find an exact match (for single IPs like "1.2.3.4")
+	for _, block := range ipBlocks {
+		// URL-encode the IP block for API calls (/ becomes %2F)
+		if block == targetIP || strings.HasPrefix(block, targetIP+"/") {
+			return block, nil
+		}
+	}
+
+	// For CIDR blocks, we need to check if the IP is in the range
+	// For now, we'll try each block and see if it contains our IP
+	for _, block := range ipBlocks {
+		// Try to get reverse records for this block
+		// If we can query it successfully with our IP, it's the right block
+		encodedBlock := strings.ReplaceAll(block, "/", "%2F")
+		var reverseRecords []string
+		err := o.client.Get(fmt.Sprintf("/ip/%s/reverse", encodedBlock), &reverseRecords)
+		if err == nil {
+			// This block exists, check if our IP can be used
+			return block, nil
+		}
+	}
+
+	return "", fmt.Errorf("no IP block found containing %s", targetIP)
+}
+
+// CreateReverseDNS creates a reverse DNS (PTR) record for an IP address
+func (o *OVHCloudProvider) CreateReverseDNS(ipBlock, ipAddress, hostname string) error {
+	// Ensure hostname ends with a dot (required for PTR records)
+	if !strings.HasSuffix(hostname, ".") {
+		hostname = hostname + "."
+	}
+
+	// Convert hostname to Punycode for IDN support
+	hostnameASCII, err := idna.ToASCII(strings.TrimSuffix(hostname, "."))
+	if err != nil {
+		hostnameASCII = strings.TrimSuffix(hostname, ".")
+	}
+	hostnameASCII = hostnameASCII + "."
+
+	// URL-encode the IP block for API calls
+	encodedBlock := strings.ReplaceAll(ipBlock, "/", "%2F")
+
+	// Check if reverse DNS already exists
+	var existingReverse OVHReverseRecord
+	encodedIP := strings.ReplaceAll(ipAddress, ":", "%3A") // Encode colons for IPv6
+	err = o.client.Get(fmt.Sprintf("/ip/%s/reverse/%s", encodedBlock, encodedIP), &existingReverse)
+	if err == nil {
+		// Reverse exists, check if it's already correct
+		if existingReverse.Reverse == hostnameASCII {
+			fmt.Printf("  ℹ PTR already configured: %s → %s\n", ipAddress, hostnameASCII)
+			return nil
+		}
+		// Delete existing record first
+		err = o.client.Delete(fmt.Sprintf("/ip/%s/reverse/%s", encodedBlock, encodedIP), nil)
+		if err != nil {
+			fmt.Printf("    Warning: Failed to delete existing PTR: %v\n", err)
+		}
+	}
+
+	// Create the reverse DNS record
+	params := struct {
+		IPReverse string `json:"ipReverse"`
+		Reverse   string `json:"reverse"`
+	}{
+		IPReverse: ipAddress,
+		Reverse:   hostnameASCII,
+	}
+
+	var result interface{}
+	err = o.client.Post(fmt.Sprintf("/ip/%s/reverse", encodedBlock), params, &result)
+	if err != nil {
+		return fmt.Errorf("failed to create PTR record: %w", err)
+	}
+
+	return nil
+}
+
+// ConfigurePTRRecords configures PTR records for the mail server (IPv4 and IPv6)
+func (o *OVHCloudProvider) ConfigurePTRRecords(serverIPv4, serverIPv6, mailHostname string) error {
+	fmt.Println("→ Looking up IP blocks in OVHcloud account...")
+
+	ipBlocks, err := o.GetIPBlocks()
+	if err != nil {
+		return fmt.Errorf("failed to get IP blocks: %w", err)
+	}
+
+	if len(ipBlocks) == 0 {
+		return fmt.Errorf("no IP blocks found in OVHcloud account")
+	}
+
+	fmt.Printf("  Found %d IP block(s)\n", len(ipBlocks))
+
+	// Convert mail hostname to Punycode for display
+	mailHostnameASCII, err := idna.ToASCII(mailHostname)
+	if err != nil {
+		mailHostnameASCII = mailHostname
+	}
+
+	ipv4Success := false
+	ipv6Success := false
+
+	// Configure PTR for IPv4
+	if serverIPv4 != "" {
+		fmt.Printf("\n→ Configuring PTR for %s (IPv4)...\n", serverIPv4)
+
+		// Find the IP block for this IP
+		// For OVH VPS, the IP is usually represented as a /32 block
+		ipBlock := serverIPv4 // Try the IP directly first
+
+		err := o.CreateReverseDNS(ipBlock, serverIPv4, mailHostname)
+		if err != nil {
+			// Try with /32 suffix
+			ipBlock = serverIPv4 + "/32"
+			err = o.CreateReverseDNS(ipBlock, serverIPv4, mailHostname)
+		}
+		if err != nil {
+			fmt.Printf("  ⚠ Warning: Failed to set PTR for %s: %v\n", serverIPv4, err)
+			fmt.Println("  ℹ Note: PTR records require the IP to be in your OVHcloud account")
+		} else {
+			fmt.Printf("  ✓ PTR record set: %s → %s\n", serverIPv4, mailHostnameASCII)
+			ipv4Success = true
+		}
+	}
+
+	// Configure PTR for IPv6
+	if serverIPv6 != "" {
+		fmt.Printf("\n→ Configuring PTR for %s (IPv6)...\n", serverIPv6)
+
+		// For IPv6, we need to find the appropriate block
+		// OVH typically assigns /128 or /64 blocks
+		ipBlock := serverIPv6 // Try the IP directly first
+
+		err := o.CreateReverseDNS(ipBlock, serverIPv6, mailHostname)
+		if err != nil {
+			// Try with /128 suffix
+			ipBlock = serverIPv6 + "/128"
+			err = o.CreateReverseDNS(ipBlock, serverIPv6, mailHostname)
+		}
+		if err != nil {
+			fmt.Printf("  ⚠ Warning: Failed to set PTR for %s: %v\n", serverIPv6, err)
+		} else {
+			fmt.Printf("  ✓ PTR record set: %s → %s\n", serverIPv6, mailHostnameASCII)
+			ipv6Success = true
+		}
+	}
+
+	// Show manual instructions if needed
+	if !ipv4Success && !ipv6Success {
+		fmt.Println("\n⚠️  PTR Configuration Failed")
+		fmt.Println("   Please configure PTR records manually in OVHcloud Manager:")
+		fmt.Println("   1. Go to: https://www.ovh.com/manager/dedicated/#/iplb")
+		fmt.Println("   2. Select your IP address")
+		fmt.Println("   3. Click 'Edit reverse'")
+		fmt.Printf("   4. Set value to: %s\n", mailHostnameASCII)
+		return fmt.Errorf("failed to configure PTR records automatically")
+	}
+
+	if !ipv4Success {
+		fmt.Println("\n⚠️  IPv4 PTR not configured. Please configure manually if needed.")
+	}
+	if serverIPv6 != "" && !ipv6Success {
+		fmt.Println("\n⚠️  IPv6 PTR not configured. Please configure manually if needed.")
+	}
+
+	return nil
+}
+
+// ConfigurePTROVH is a helper function to configure PTR records for OVHcloud
+func ConfigurePTROVH(creds OVHCloudCredentials, serverIPv4, serverIPv6, mailHostname string) error {
+	provider, err := NewOVHCloudProvider(creds)
+	if err != nil {
+		return fmt.Errorf("failed to create OVH provider: %w", err)
+	}
+
+	return provider.ConfigurePTRRecords(serverIPv4, serverIPv6, mailHostname)
 }

@@ -89,27 +89,35 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 
 	// Template data structure for backwards compatibility
 	type TemplateData struct {
-		ServerIP        string
-		DNSProvider     *config.DNSProviderConfig
-		Domains         []config.Domain
-		PrimaryDomain   string
-		Subdomains      []config.Subdomain       // For backwards compatibility with Ansible roles
-		WebAdmin        *config.WebAdminConfig   // Extracted from primary domain for backwards compatibility
-		DomainUser      *config.DomainUserConfig // Extracted from primary domain for backwards compatibility
-		SystemUsers     []config.SystemUser
-		DomainRedirects []config.DomainRedirect
+		ServerIP            string
+		DNSProvider         *config.DNSProviderConfig
+		Domains             []config.Domain
+		PrimaryDomain       string
+		Subdomains          []config.Subdomain       // For backwards compatibility with Ansible roles
+		WebAdmin            *config.WebAdminConfig   // Extracted from primary domain for backwards compatibility
+		DomainUser          *config.DomainUserConfig // Extracted from primary domain for backwards compatibility
+		SystemUsers         []config.SystemUser
+		DomainRedirects     []config.DomainRedirect
+		MailserverSubdomain string // Dynamic mailserver subdomain name (e.g., "mx", "mail", etc.)
+	}
+
+	// Extract mailserver subdomain name from primary domain
+	mailserverSubdomain := "mx" // default fallback
+	if sub := primaryDomain.GetSubdomainByRole("mailserver"); sub != nil {
+		mailserverSubdomain = sub.Name
 	}
 
 	data := TemplateData{
-		ServerIP:        cfg.ServerIP,
-		DNSProvider:     cfg.DNSProvider,
-		Domains:         domainsASCII,          // Use Punycode versions
-		PrimaryDomain:   primaryDomainASCII,   // Use Punycode version
-		Subdomains:      primaryDomain.Subdomains, // Extract subdomains from primary domain
-		WebAdmin:        primaryDomain.WebAdmin,   // Extract webadmin from primary domain
-		DomainUser:      primaryDomain.DomainUser, // Extract domain_user from primary domain
-		SystemUsers:     cfg.SystemUsers,
-		DomainRedirects: redirectsASCII,       // Use Punycode versions
+		ServerIP:            cfg.ServerIP,
+		DNSProvider:         cfg.DNSProvider,
+		Domains:             domainsASCII,             // Use Punycode versions
+		PrimaryDomain:       primaryDomainASCII,       // Use Punycode version
+		Subdomains:          primaryDomain.Subdomains, // Extract subdomains from primary domain
+		WebAdmin:            primaryDomain.WebAdmin,   // Extract webadmin from primary domain
+		DomainUser:          primaryDomain.DomainUser, // Extract domain_user from primary domain
+		SystemUsers:         cfg.SystemUsers,
+		DomainRedirects:     redirectsASCII,           // Use Punycode versions
+		MailserverSubdomain: mailserverSubdomain,
 	}
 
 	// Template for group_vars/all.yml
@@ -142,6 +150,9 @@ dns_provider:
 
 # Primary domain (for backwards compatibility)
 primary_domain: {{ .PrimaryDomain }}
+
+# Mailserver subdomain name (dynamic - e.g., "mx", "mail", etc.)
+mailserver_subdomain: {{ .MailserverSubdomain }}
 
 # Subdomains for primary domain (for backwards compatibility with Ansible roles)
 subdomains:

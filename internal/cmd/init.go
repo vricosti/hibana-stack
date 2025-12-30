@@ -188,7 +188,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 					ApplicationSecret: cfg.DNSProvider.GetCredentialValue("application_secret"),
 					ConsumerKey:       cfg.DNSProvider.GetCredentialValue("consumer_key"),
 				}
-				if err := dnsprovider.UpdateDNSRecordsPreInstallOVH(ovhCreds, domainCfg, cfg.ServerIP); err != nil {
+				// Get server IPv6 address if available
+				serverIPv6, _ := system.GetServerIPv6()
+				if err := dnsprovider.UpdateDNSRecordsPreInstallOVH(ovhCreds, domainCfg, cfg.ServerIP, serverIPv6); err != nil {
 					return fmt.Errorf("DNS pre-install configuration failed for %s: %w\n\nPlease check your DNS provider settings and try again.", domain.Name, err)
 				}
 			} else {
@@ -281,8 +283,23 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 		// Configure PTR records if mailserver role is enabled on primary domain
 		if primaryDomain.HasSubdomainRole("mailserver") {
-			if err := dnsprovider.ConfigurePTR(cfg.DNSProvider.Name, cfg.DNSProvider.GetCredentialValue("api_token"), cfg.ServerIP, primaryDomain.Name); err != nil {
-				fmt.Printf("\n  Warning: PTR configuration failed: %v\n", err)
+			mailHostname := fmt.Sprintf("%s.%s", cfg.GetMailserverSubdomain(), primaryDomain.Name)
+			serverIPv6, _ := system.GetServerIPv6()
+
+			if cfg.DNSProvider.Name == "ovh" || cfg.DNSProvider.Name == "ovhcloud" {
+				ovhCreds := dnsprovider.OVHCloudCredentials{
+					Endpoint:          cfg.DNSProvider.GetCredentialValue("endpoint"),
+					ApplicationKey:    cfg.DNSProvider.GetCredentialValue("application_key"),
+					ApplicationSecret: cfg.DNSProvider.GetCredentialValue("application_secret"),
+					ConsumerKey:       cfg.DNSProvider.GetCredentialValue("consumer_key"),
+				}
+				if err := dnsprovider.ConfigurePTROVH(ovhCreds, cfg.ServerIP, serverIPv6, mailHostname); err != nil {
+					fmt.Printf("\n  Warning: PTR configuration failed: %v\n", err)
+				}
+			} else {
+				if err := dnsprovider.ConfigurePTR(cfg.DNSProvider.Name, cfg.DNSProvider.GetCredentialValue("api_token"), cfg.ServerIP, primaryDomain.Name, cfg.GetMailserverSubdomain()); err != nil {
+					fmt.Printf("\n  Warning: PTR configuration failed: %v\n", err)
+				}
 			}
 		}
 
@@ -316,9 +333,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	} else if primaryDomain.HasSubdomainRole("mailserver") {
 		// No DNS provider configured but mailserver is enabled - show manual PTR instructions
+		mailserverSubdomain := cfg.GetMailserverSubdomain()
 		fmt.Println("\nPTR records must be configured manually for email deliverability:")
-		fmt.Printf("    Set PTR for IPv4 to: mx.%s\n", primaryDomain.Name)
-		fmt.Printf("    Set PTR for IPv6 to: mx.%s\n", primaryDomain.Name)
+		fmt.Printf("    Set PTR for IPv4 to: %s.%s\n", mailserverSubdomain, primaryDomain.Name)
+		fmt.Printf("    Set PTR for IPv6 to: %s.%s\n", mailserverSubdomain, primaryDomain.Name)
 	}
 
 	// Build list of enabled roles for primary domain
@@ -343,7 +361,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  - Website:    https://www.%s\n", primaryDomain.Name)
 	}
 	if enabledRoles["mailserver"] {
-		fmt.Printf("  - Mail:       mx.%s\n", primaryDomain.Name)
+		fmt.Printf("  - Mail:       %s.%s\n", cfg.GetMailserverSubdomain(), primaryDomain.Name)
 	}
 
 	// Show secondary domains

@@ -168,14 +168,45 @@ func GetServerIP() (string, error) {
 		return "", fmt.Errorf("no IP addresses found")
 	}
 
-	// Return first non-loopback IP
+	// Return first non-loopback IPv4
 	for _, ip := range ips {
-		if !strings.HasPrefix(ip, "127.") && !strings.HasPrefix(ip, "::1") {
+		if !strings.HasPrefix(ip, "127.") && !strings.Contains(ip, ":") {
 			return strings.TrimSpace(ip), nil
 		}
 	}
 
 	return strings.TrimSpace(ips[0]), nil
+}
+
+// GetServerIPv6 attempts to get the server's public IPv6 address
+func GetServerIPv6() (string, error) {
+	// Try to get IP from hostname -I
+	cmd := exec.Command("hostname", "-I")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get server IP: %w", err)
+	}
+
+	ips := strings.Fields(string(output))
+	if len(ips) == 0 {
+		return "", fmt.Errorf("no IP addresses found")
+	}
+
+	// Return first non-loopback public IPv6 (skip link-local fe80::)
+	for _, ip := range ips {
+		if strings.Contains(ip, ":") && !strings.HasPrefix(ip, "::1") && !strings.HasPrefix(ip, "fe80:") {
+			return strings.TrimSpace(ip), nil
+		}
+	}
+
+	return "", fmt.Errorf("no public IPv6 address found")
+}
+
+// GetServerIPs returns both IPv4 and IPv6 addresses
+func GetServerIPs() (ipv4, ipv6 string) {
+	ipv4, _ = GetServerIP()
+	ipv6, _ = GetServerIPv6()
+	return
 }
 
 // FixHostsFile ensures the hostname is resolvable in /etc/hosts to avoid sudo delays

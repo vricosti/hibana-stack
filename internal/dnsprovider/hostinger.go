@@ -1028,19 +1028,19 @@ func UpdateDNSRecords(providerName, providerType, apiToken string, domainCfg Dom
 				}
 			}
 
-			// Check if mailserver subdomain exists
-			hasMailserver := false
+			// Check if mailserver subdomain exists and get its name
+			mailserverSubdomain := ""
 			for _, sub := range domainCfg.Subdomains {
 				if sub.Role == "mailserver" {
-					hasMailserver = true
+					mailserverSubdomain = sub.Name
 					break
 				}
 			}
 
-			if hasMailserver {
+			if mailserverSubdomain != "" {
 				// Check MX record
-				mxContent := fmt.Sprintf("10 mx.%s", domain)
-				if existing, ok := existingByNameType["@:MX"]; ok && strings.Contains(existing.Content, fmt.Sprintf("mx.%s", domain)) {
+				mxContent := fmt.Sprintf("10 %s.%s", mailserverSubdomain, domain)
+				if existing, ok := existingByNameType["@:MX"]; ok && strings.Contains(existing.Content, fmt.Sprintf("%s.%s", mailserverSubdomain, domain)) {
 					fmt.Printf("  ℹ %s MX: already configured\n", domain)
 				} else {
 					recordsToCreate = append(recordsToCreate, HostingerRecord{
@@ -1124,7 +1124,7 @@ func UpdateDNSRecords(providerName, providerType, apiToken string, domainCfg Dom
 			}
 
 			// Note: DKIM will be added automatically after the playbook generates the keys
-			if hasMailserver {
+			if mailserverSubdomain != "" {
 				fmt.Println("\n  ℹ DKIM record will be added after keys are generated")
 			}
 		}
@@ -1351,18 +1351,22 @@ func (h *HostingerProvider) ConfigurePTRRecords(serverIP, mailHostname string) e
 }
 
 // ConfigurePTR configures PTR records for the mail server using the DNS provider
-func ConfigurePTR(providerName, apiToken, serverIP, domain string) error {
+func ConfigurePTR(providerName, apiToken, serverIP, domain, mailserverSubdomain string) error {
+	if mailserverSubdomain == "" {
+		mailserverSubdomain = "mx" // default fallback
+	}
+
 	if providerName == "" || apiToken == "" {
 		// DNS provider not configured, show manual instructions
 		fmt.Println("\n⚠️  PTR records must be configured manually:")
-		fmt.Printf("    → Set PTR for IPv4 to: mx.%s\n", domain)
-		fmt.Printf("    → Set PTR for IPv6 to: mx.%s\n", domain)
+		fmt.Printf("    → Set PTR for IPv4 to: %s.%s\n", mailserverSubdomain, domain)
+		fmt.Printf("    → Set PTR for IPv6 to: %s.%s\n", mailserverSubdomain, domain)
 		fmt.Println("    → This is required for email deliverability")
 		return nil
 	}
 
 	providerName = strings.ToLower(strings.TrimSpace(providerName))
-	mailHostname := fmt.Sprintf("mx.%s", domain)
+	mailHostname := fmt.Sprintf("%s.%s", mailserverSubdomain, domain)
 
 	fmt.Println("\n📧 Configuring PTR records for mail server...")
 
@@ -1562,11 +1566,20 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 				existingByNameType[key] = r
 			}
 
+			// Get mailserver subdomain name for this domain
+			mailserverSubdomain := "mx" // default fallback
+			for _, sub := range domainCfg.Subdomains {
+				if sub.Role == "mailserver" {
+					mailserverSubdomain = sub.Name
+					break
+				}
+			}
+
 			// Helper function
 			shouldSkip := func(name, recordType string) (bool, string) {
 				key := fmt.Sprintf("%s:%s", name, recordType)
 				if existing, ok := existingByNameType[key]; ok {
-					if existing.Content == serverIP || (recordType == "MX" && strings.Contains(existing.Content, fmt.Sprintf("mx.%s", domain))) {
+					if existing.Content == serverIP || (recordType == "MX" && strings.Contains(existing.Content, fmt.Sprintf("%s.%s", mailserverSubdomain, domain))) {
 						return true, "already exists with correct value"
 					}
 					return false, ""
@@ -1606,17 +1619,9 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 				}
 			}
 
-			// MX record if mailserver role exists
-			hasMailserver := false
-			for _, sub := range domainCfg.Subdomains {
-				if sub.Role == "mailserver" {
-					hasMailserver = true
-					break
-				}
-			}
-
-			if hasMailserver {
-				mxContent := fmt.Sprintf("10 mx.%s", domain)
+			// MX record if mailserver role exists (mailserverSubdomain already set above)
+			if mailserverSubdomain != "" {
+				mxContent := fmt.Sprintf("10 %s.%s", mailserverSubdomain, domain)
 				if skip, reason := shouldSkip("@", "MX"); skip {
 					fmt.Printf("  ℹ %s MX: %s\n", domain, reason)
 				} else {
