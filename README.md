@@ -4,16 +4,45 @@
 
 # Hibana Stack
 
-Configure your Ubuntu server with DNS, mail, and multi-domain support in one command.
+A Go CLI utility that configures a complete multi-domain server with DNS, mail, and web services in one command.
 
-## Features
+## Overview
 
-- DNS management: PowerDNS (self-hosted) or external provider (Hostinger)
-- Mail server with DMARC, DKIM, SPF and SpamAssassin
-- Traefik reverse proxy with automatic SSL (Let's Encrypt)
-- Web admin interface at `adm.yourdomain.com`
-- Multi-domain support with per-domain users
-- Dockerized components
+Hibana Stack automates the setup of a production-ready server infrastructure on Ubuntu. It handles DNS configuration, mail server deployment with full authentication (DMARC, DKIM, SPF), and containerized web services behind a reverse proxy with automatic SSL certificates.
+
+## Supported Platforms
+
+- **Operating System**: Ubuntu Server (tested on Ubuntu 24.04 LTS)
+- **DNS Providers**: OVHcloud, Hostinger
+
+## Architecture
+
+```
+                                    ┌─────────────────────────────────────────┐
+                                    │              Ubuntu Server              │
+                                    │                                         │
+    Internet ──────► Traefik ──────►│  ┌─────────┐  ┌─────────┐  ┌─────────┐ │
+                   (Reverse Proxy)  │  │   adm   │  │ webmail │  │   www   │ │
+                   + SSL/TLS        │  │ Docker  │  │ Docker  │  │ Docker  │ │
+                                    │  └─────────┘  └─────────┘  └─────────┘ │
+                                    │                                         │
+                                    │  ┌─────────────────────────────────────┐│
+                                    │  │  Mail Server (Postfix + Dovecot)   ││
+                                    │  │  DMARC, DKIM, SPF, SpamAssassin    ││
+                                    │  └─────────────────────────────────────┘│
+                                    └─────────────────────────────────────────┘
+```
+
+### Components
+
+| Component | Description |
+|-----------|-------------|
+| **Traefik** | Reverse proxy managing SSL certificates via Let's Encrypt |
+| **adm** | Web administration interface (Docker container) |
+| **webmail** | Roundcube webmail client (Docker container) |
+| **www** | Website hosting (Docker container) |
+| **Postfix + Dovecot** | Mail server with IMAP/SMTP |
+| **SpamAssassin** | Spam filtering |
 
 ## Quick Start
 
@@ -33,16 +62,22 @@ Edit `hibana-config.yaml`:
 primary_domain: example.com
 server_ip: YOUR_SERVER_IP
 
-# DNS: "local" (PowerDNS) or "external" (Hostinger)
 dns_provider:
   type: external
-  name: hostinger
-  api_token: YOUR_API_TOKEN
+  name: ovhcloud  # or "hostinger"
+  # For OVHcloud:
+  app_key: YOUR_APP_KEY
+  app_secret: YOUR_APP_SECRET
+  consumer_key: YOUR_CONSUMER_KEY
+  # For Hostinger:
+  # api_token: YOUR_API_TOKEN
+
+mailserver_subdomain: mx  # Subdomain for mail server
 
 subdomains:
   - name: adm
     role: webadmin
-  - name: mail
+  - name: mx
     role: mailserver
   - name: webmail
     role: webmail
@@ -59,63 +94,62 @@ webadmin:
   password: SECURE_PASSWORD
 
 domain_user:
-  ssh_key_mode: auto  # or "manual" with ssh_public_key
+  ssh_key_mode: auto
 ```
 
-## What Gets Installed
+## DNS Provider Setup
 
-| Service | URL |
-|---------|-----|
-| Mail server | mail.yourdomain.com |
-| Webmail | webmail.yourdomain.com |
-| Admin interface | adm.yourdomain.com |
-| Website | www.yourdomain.com |
+### OVHcloud
 
-## Admin Interface
+1. Go to https://manager.eu.ovhcloud.com/#/iam/api-keys/onboarding
+2. Create API credentials with these permissions:
+   - `GET/POST/PUT/DELETE /domain/zone/*` (DNS management)
+   - `GET/POST/PUT/DELETE /ip/*` (PTR records)
 
-Access `https://adm.yourdomain.com` with your webadmin credentials.
+### Hostinger
 
-Features:
-- Domain management
-- Email account management
-- DNS record editor
-- SSH key management for domain users
+1. Access Hostinger control panel
+2. Generate an API token with DNS management permissions
+
+## Services After Installation
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Admin Panel | `https://adm.yourdomain.com` | Domain and email management |
+| Webmail | `https://webmail.yourdomain.com` | Roundcube email client |
+| Website | `https://www.yourdomain.com` | Your website |
+| Mail Server | `mx.yourdomain.com` | SMTP/IMAP endpoints |
+
+## DNS Records Created
+
+Hibana automatically configures:
+
+- **A/AAAA** records for all subdomains
+- **MX** record pointing to the mail server
+- **SPF** record for email authentication
+- **DKIM** record with generated keys
+- **DMARC** record for email policy
+- **PTR** records (reverse DNS) when supported
 
 ## Adding Domains
 
 After initial setup, add more domains via the web admin or CLI:
 
 ```bash
-# Prepare domain on server (creates user, directories, Traefik config)
 sudo hibana add domain newdomain.com
-
-# Then add via web admin at adm.yourdomain.com
 ```
 
-## Domain User
-
-A restricted system user is created for each domain. The username is derived from the domain name (dots replaced by hyphens):
-
-| Domain | Username | Directory |
-|--------|----------|-----------|
-| example.com | example-com | /srv/example-com/ |
-
-```bash
-# Deploy files
-scp -r dist/* example-com@server:/srv/example-com/www/src/
-
-# Restart containers
-ssh example-com@server
-cd /srv/example-com/www
-sudo docker-compose up -d --build
-```
+Each domain gets:
+- A dedicated system user (e.g., `example-com`)
+- A home directory at `/srv/example-com/`
+- Isolated Docker containers
 
 ## Requirements
 
 - Ubuntu Server 24.04 LTS
 - Root access
-- Domain with DNS control
-- 2GB RAM, 20GB disk
+- Domain with DNS managed by OVHcloud or Hostinger
+- Minimum: 2GB RAM, 20GB disk
 
 ## License
 
