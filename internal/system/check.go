@@ -13,21 +13,9 @@ var requiredPackages = []string{
 	"postgresql-contrib",
 	"docker.io",
 	"docker-compose",
-	"postfix",
-	"dovecot-core",
-	"dovecot-imapd",
-	"dovecot-pop3d",
-	"dovecot-lmtpd",
-	"dovecot-sieve",
-	"dovecot-managesieved",
-	"opendkim",
-	"opendkim-tools",
 	"openssl",
-	"mailutils",
 	"pdns-server",
 	"pdns-backend-pgsql",
-	"spamassassin",
-	"spamc",
 }
 
 // CheckUbuntuVersion verifies the system is running Ubuntu

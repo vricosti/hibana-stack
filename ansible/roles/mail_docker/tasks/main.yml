@@ -1,0 +1,74 @@
+---
+# Hibana Dockerized Mail Server Role
+# Deploys per-domain mail containers with HAProxy routing
+
+- name: Create mail network
+  docker_network:
+    name: hibana-mail-network
+    state: present
+
+- name: Get mail network gateway IP
+  shell: "docker network inspect hibana-mail-network --format '{{ '{{' }}range .IPAM.Config{{ '}}' }}{{ '{{' }}.Gateway{{ '}}' }}{{ '{{' }}end{{ '}}' }}'"
+  register: mail_network_gateway
+  changed_when: false
+
+- name: Set mail network gateway fact
+  set_fact:
+    mail_network_gateway_ip: "{{ mail_network_gateway.stdout | default('172.17.0.1') | trim }}"
+
+- name: Display mail network gateway
+  debug:
+    msg: "Mail network gateway: {{ mail_network_gateway_ip }}"
+
+- name: Create mail proxy directory
+  file:
+    path: /srv/mail-proxy
+    state: directory
+    mode: '0755'
+
+- name: Generate HAProxy configuration
+  template:
+    src: mail-proxy/haproxy.cfg.j2
+    dest: /srv/mail-proxy/haproxy.cfg
+    mode: '0644'
+  notify: Restart mail proxy
+
+- name: Create mail proxy docker-compose
+  template:
+    src: mail-proxy/docker-compose.yml.j2
+    dest: /srv/mail-proxy/docker-compose.yml
+    mode: '0644'
+
+- name: Read hibana database password
+  slurp:
+    src: /etc/hibana/passwords/hibana
+  register: hibana_db_password_file
+
+- name: Set database password fact
+  set_fact:
+    hibana_db_password: "{{ hibana_db_password_file['content'] | b64decode | trim }}"
+
+# Deploy mail container for each domain
+- name: Deploy mail containers for each domain
+  include_tasks: deploy_mail_container.yml
+  loop: "{{ domains }}"
+  loop_control:
+    loop_var: domain
+    label: "{{ domain.name }}"
+
+# Start mail proxy after all containers are ready
+- name: Stop mail proxy (cleanup)
+  docker_compose:
+    project_src: /srv/mail-proxy
+    state: absent
+  ignore_errors: yes
+
+- name: Start mail proxy
+  docker_compose:
+    project_src: /srv/mail-proxy
+    state: present
+  register: mail_proxy_result
+
+- name: Display mail deployment results
+  debug:
+    msg: "Mail proxy: {{ 'deployed' if mail_proxy_result.changed else 'already running' }}"

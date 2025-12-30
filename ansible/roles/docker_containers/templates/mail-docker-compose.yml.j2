@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  mail:
+    build:
+      context: ./build
+      dockerfile: Dockerfile
+    container_name: hibana-mail-{{ domain_name | replace('.', '-') }}
+    restart: unless-stopped
+    hostname: {{ mailserver_subdomain }}.{{ domain_name }}
+    networks:
+      - mail-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - DOMAIN={{ domain_name }}
+      - MAILSERVER_HOSTNAME={{ mailserver_subdomain }}.{{ domain_name }}
+      - DB_HOST=host.docker.internal
+      - DB_NAME=hibana
+      - DB_USER=hibana
+      - DB_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - mail-data:/var/mail/vhosts
+      - dkim-keys:/etc/opendkim/keys
+      - ./ssl:/etc/ssl/certs/external:ro
+      - ./logs:/var/log/mail
+    labels:
+      - "hibana.mail.domain={{ domain_name }}"
+      - "hibana.mail.hostname={{ mailserver_subdomain }}.{{ domain_name }}"
+
+volumes:
+  mail-data:
+    name: hibana-mail-{{ domain_name | replace('.', '-') }}-data
+  dkim-keys:
+    name: hibana-mail-{{ domain_name | replace('.', '-') }}-dkim
+
+networks:
+  mail-network:
+    external: true
+    name: hibana-mail-network

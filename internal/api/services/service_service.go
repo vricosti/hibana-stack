@@ -83,6 +83,9 @@ func (s *ServiceService) ListServices(domainName string) ([]models.Service, erro
 			role = "webmail"
 			deployable = false
 			isCustom = false
+		case "mail":
+			// Skip - mail is handled separately as dockerized container
+			continue
 		}
 
 		containerName := serviceName + "-" + systemName
@@ -99,13 +102,14 @@ func (s *ServiceService) ListServices(domainName string) ([]models.Service, erro
 		foundServices[serviceName] = true
 	}
 
-	// Check for mail service (postfix) - only if domain is configured in postfix
-	if s.isMailConfigured(domainName) {
+	// Check for mail service (dockerized) - check if mail container exists
+	mailContainerName := "hibana-mail-" + systemName
+	if s.isMailContainerDeployed(mailContainerName) {
 		services = append(services, models.Service{
 			Name:          "mail",
 			Role:          "mailserver",
-			ContainerName: "",
-			Status:        s.getPostfixStatus(),
+			ContainerName: mailContainerName,
+			Status:        s.getMailContainerStatus(mailContainerName),
 			Deployable:    false,
 			IsCustom:      false,
 		})
@@ -138,34 +142,33 @@ func (s *ServiceService) ListServices(domainName string) ([]models.Service, erro
 	return services, nil
 }
 
-// isMailConfigured checks if mail is configured for this domain
-func (s *ServiceService) isMailConfigured(domainName string) bool {
-	// Check if postfix is installed
-	if _, err := os.Stat("/etc/postfix/main.cf"); os.IsNotExist(err) {
-		return false
-	}
-
-	// Check if this domain is in virtual_mailbox_domains
-	data, err := os.ReadFile("/etc/postfix/virtual_mailbox_domains")
-	if err != nil {
-		return false
-	}
-
-	return strings.Contains(string(data), domainName)
-}
-
-// getPostfixStatus returns the status of postfix service
-func (s *ServiceService) getPostfixStatus() string {
-	cmd := exec.Command("systemctl", "is-active", "postfix")
+// isMailContainerDeployed checks if a dockerized mail container exists for this domain
+func (s *ServiceService) isMailContainerDeployed(containerName string) bool {
+	cmd := exec.Command("docker", "ps", "-a", "--filter", "name=^"+containerName+"$", "--format", "{{.Names}}")
 	output, err := cmd.Output()
 	if err != nil {
-		return "stopped"
+		return false
+	}
+	return strings.TrimSpace(string(output)) == containerName
+}
+
+// getMailContainerStatus returns the status of a dockerized mail container
+func (s *ServiceService) getMailContainerStatus(containerName string) string {
+	cmd := exec.Command("docker", "ps", "-a", "--filter", "name=^"+containerName+"$", "--format", "{{.Status}}")
+	output, err := cmd.Output()
+	if err != nil {
+		return "not_deployed"
 	}
 
 	status := strings.TrimSpace(string(output))
-	if status == "active" {
+	if status == "" {
+		return "not_deployed"
+	}
+
+	if strings.HasPrefix(status, "Up") {
 		return "running"
 	}
+
 	return "stopped"
 }
 

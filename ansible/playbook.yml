@@ -19,20 +19,16 @@
       tags: [powerdns, dns]
       when: dns_provider is defined and dns_provider.type == 'local'
 
-    - role: mail_server
-      tags: [mail, postfix, dovecot]
-
-    - role: dkim
-      tags: [mail, dkim, security]
-
-    - role: spamassassin
-      tags: [mail, spam]
+    # Dockerized mail server (per-domain containers with HAProxy routing)
+    - role: mail_docker
+      tags: [mail, docker]
 
     - role: fail2ban
       tags: [security, fail2ban]
 
     - role: dns_records
       tags: [dns, records]
+      when: dns_provider is defined and dns_provider.type == 'local'
 
     - role: traefik
       tags: [traefik, proxy]

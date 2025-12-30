@@ -1,0 +1,126 @@
+---
+# Deploy mail container for a single domain
+
+- name: Set domain path variables
+  set_fact:
+    domain_name: "{{ domain.name }}"
+    domain_path_safe: "{{ domain.name | replace('.', '-') }}"
+    mail_container_path: "/srv/{{ domain.name | replace('.', '-') }}/mail"
+
+- name: Create mail container directories
+  file:
+    path: "{{ mail_container_path }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - ''
+    - 'build'
+    - 'ssl'
+    - 'logs'
+    - 'data'
+    - 'dkim'
+
+- name: Copy Dockerfile
+  copy:
+    src: Dockerfile
+    dest: "{{ mail_container_path }}/build/Dockerfile"
+    mode: '0644'
+
+- name: Copy entrypoint script
+  copy:
+    src: entrypoint.sh
+    dest: "{{ mail_container_path }}/build/entrypoint.sh"
+    mode: '0755'
+
+- name: Copy supervisord configuration
+  copy:
+    src: supervisord.conf
+    dest: "{{ mail_container_path }}/build/supervisord.conf"
+    mode: '0644'
+
+- name: Create mail docker-compose
+  template:
+    src: mail-docker-compose.yml.j2
+    dest: "{{ mail_container_path }}/docker-compose.yml"
+    mode: '0644'
+  vars:
+    domain_name: "{{ domain.name }}"
+
+- name: Create mail .env file
+  copy:
+    content: |
+      DOMAIN={{ domain.name }}
+      MAILSERVER_HOSTNAME={{ mailserver_subdomain }}.{{ domain.name }}
+      DB_HOST=host.docker.internal
+      DB_NAME=hibana
+      DB_USER=hibana
+      DB_PASSWORD={{ hibana_db_password }}
+    dest: "{{ mail_container_path }}/.env"
+    mode: '0600'
+
+- name: Ensure domain exists in database
+  postgresql_query:
+    db: hibana
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    login_host: localhost
+    query: |
+      INSERT INTO domains (name, server_ip)
+      VALUES ('{{ domain.name }}', '{{ server_ip }}')
+      ON CONFLICT (name) DO NOTHING
+  become_user: postgres
+
+- name: Store email accounts in database
+  postgresql_query:
+    db: hibana
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    login_host: localhost
+    query: |
+      WITH domain_cte AS (
+        SELECT id FROM domains WHERE name = '{{ domain.name }}'
+      )
+      INSERT INTO email_accounts (domain_id, username, password_hash, full_name)
+      VALUES (
+        (SELECT id FROM domain_cte),
+        '{{ item.username }}',
+        '{{ item.password | password_hash("blowfish") }}',
+        '{{ item.full_name | default("") }}'
+      )
+      ON CONFLICT (domain_id, username) DO UPDATE
+      SET password_hash = EXCLUDED.password_hash,
+          full_name = EXCLUDED.full_name
+  loop: "{{ domain.email_accounts }}"
+  become_user: postgres
+  no_log: true
+
+- name: Stop mail container (cleanup)
+  docker_compose:
+    project_src: "{{ mail_container_path }}"
+    state: absent
+  ignore_errors: yes
+
+- name: Build and start mail container
+  docker_compose:
+    project_src: "{{ mail_container_path }}"
+    build: yes
+    state: present
+  register: mail_container_result
+
+- name: Display mail container status
+  debug:
+    msg: "Mail container for {{ domain.name }}: {{ 'deployed' if mail_container_result.changed else 'already running' }}"
+
+- name: Get DKIM public key from container
+  shell: |
+    docker exec hibana-mail-{{ domain_path_safe }} cat /etc/opendkim/keys/{{ domain.name }}/default.txt 2>/dev/null || echo "DKIM_NOT_READY"
+  register: dkim_key_output
+  changed_when: false
+  ignore_errors: yes
+
+- name: Display DKIM key for DNS configuration
+  debug:
+    msg: |
+      DKIM public key for {{ domain.name }}:
+      {{ dkim_key_output.stdout }}
+  when: "'DKIM_NOT_READY' not in dkim_key_output.stdout"

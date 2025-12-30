@@ -58,25 +58,25 @@
     line: 'ssl = off'
     state: present
 
-- name: Get Docker bridge gateway IP
-  shell: "docker network inspect bridge --format '{{ '{{' }}range .IPAM.Config{{ '}}' }}{{ '{{' }}.Gateway{{ '}}' }}{{ '{{' }}end{{ '}}' }}'"
-  register: docker_bridge_ip
+- name: Get all Docker network gateway IPs
+  shell: "docker network ls -q | xargs -I {} docker network inspect {} --format '{{ '{{' }}range .IPAM.Config{{ '}}' }}{{ '{{' }}.Gateway{{ '}}' }} {{ '{{' }}end{{ '}}' }}' 2>/dev/null | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//'"
+  register: docker_gateway_ips
   changed_when: false
   failed_when: false
 
-- name: Set Docker bridge IP (default if detection fails)
+- name: Set Docker gateway IPs (default if detection fails)
   set_fact:
-    docker_gateway_ip: "{{ docker_bridge_ip.stdout | default('172.17.0.1', true) | trim }}"
+    docker_gateways: "{{ docker_gateway_ips.stdout | default('172.17.0.1', true) | trim }}"
 
-- name: Display detected Docker bridge IP
+- name: Display detected Docker gateway IPs
   debug:
-    msg: "Docker bridge gateway IP: {{ docker_gateway_ip }}"
+    msg: "Docker gateway IPs: {{ docker_gateways }}"
 
-- name: Configure PostgreSQL to listen on Docker bridge network
+- name: Configure PostgreSQL to listen on all Docker networks
   lineinfile:
     path: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
     regexp: '^#?listen_addresses\s*='
-    line: "listen_addresses = 'localhost,{{ docker_gateway_ip }}'"
+    line: "listen_addresses = 'localhost,{{ docker_gateways }}'"
     state: present
 
 - name: Allow all Docker networks in pg_hba.conf (172.16.0.0/12)

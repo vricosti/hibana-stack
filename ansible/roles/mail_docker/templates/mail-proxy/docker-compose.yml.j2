@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  mail-proxy:
+    image: haproxy:2.8-alpine
+    container_name: hibana-mail-proxy
+    restart: unless-stopped
+    ports:
+      - "25:25"      # SMTP
+      - "465:465"    # SMTPS
+      - "587:587"    # Submission
+      - "993:993"    # IMAPS
+      - "995:995"    # POP3S
+      - "8404:8404"  # Stats (optional)
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - mail-network
+    labels:
+      - "hibana.service=mail-proxy"
+
+networks:
+  mail-network:
+    external: true
+    name: hibana-mail-network

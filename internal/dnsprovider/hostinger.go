@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -99,8 +98,8 @@ func (p *HostingerPrompter) CreateCredentials(values map[string]string) (Credent
 // SetupInstructions returns provider-specific setup instructions
 func (p *HostingerPrompter) SetupInstructions() string {
 	return `To get your Hostinger API token:
-1. Log in to Hostinger Dashboard (https://hpanel.hostinger.com)
-2. Go to Account > API tokens
+1. Log in to Hostinger Dashboard
+2. Go to https://hpanel.hostinger.com/profile/api
 3. Create a new API token with DNS permissions`
 }
 
@@ -1104,10 +1103,10 @@ func UpdateDNSRecords(providerName, providerType, apiToken string, domainCfg Dom
 						name = name + "." + domain
 					}
 
-					// Use replaceRecords for A records to overwrite any existing IP (e.g., parking IP)
+					// Use replaceRecords for A and AAAA records to overwrite any existing IP (e.g., parking IP)
 					// Use updateRecords for other record types to append without removing existing records
 					var err error
-					if r.Type == "A" {
+					if r.Type == "A" || r.Type == "AAAA" {
 						err = provider.replaceRecords(domain, []HostingerRecord{r})
 					} else {
 						err = provider.updateRecords(domain, []HostingerRecord{r})
@@ -1451,18 +1450,23 @@ func AddDKIMRecord(providerName, apiToken, domain, dkimPublicKey string) error {
 	}
 }
 
-// ReadDKIMPublicKey reads the DKIM public key from the OpenDKIM key file
+// ReadDKIMPublicKey reads the DKIM public key from the mail Docker container
 func ReadDKIMPublicKey(domain string) (string, error) {
-	// Convert domain to punycode for filesystem path compatibility
+	// Convert domain to punycode for container name compatibility
 	domainASCII, err := toPunycode(domain)
 	if err != nil {
 		return "", fmt.Errorf("invalid domain name for DKIM key lookup: %w", err)
 	}
-	keyFile := fmt.Sprintf("/etc/opendkim/keys/%s/default.txt", domainASCII)
 
-	content, err := os.ReadFile(keyFile)
+	// Container name format: hibana-mail-{domain} with dots replaced by hyphens
+	containerName := "hibana-mail-" + strings.ReplaceAll(domainASCII, ".", "-")
+	keyPath := fmt.Sprintf("/etc/opendkim/keys/%s/default.txt", domainASCII)
+
+	// Read the DKIM key from inside the Docker container
+	cmd := exec.Command("docker", "exec", containerName, "cat", keyPath)
+	content, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("failed to read DKIM key file: %w", err)
+		return "", fmt.Errorf("failed to read DKIM key from container %s: %w", containerName, err)
 	}
 
 	// Parse the DKIM public key from the file
@@ -1499,9 +1503,9 @@ func ReadDKIMPublicKey(domain string) (string, error) {
 // ============================================================================
 
 // UpdateDNSRecordsPreInstall configures DNS records BEFORE Ansible playbook execution
-// This includes A records and MX records (needed for SSL certificate generation)
+// This includes A records, AAAA records, and MX records (needed for SSL certificate generation)
 // SPF, DMARC, and DKIM records are added later in UpdateDNSRecordsPostInstall
-func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, domainCfg DomainConfig, serverIP string) error {
+func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, domainCfg DomainConfig, serverIP, serverIPv6 string) error {
 	if providerName == "" || apiToken == "" {
 		return nil
 	}
@@ -1579,15 +1583,21 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 			shouldSkip := func(name, recordType string) (bool, string) {
 				key := fmt.Sprintf("%s:%s", name, recordType)
 				if existing, ok := existingByNameType[key]; ok {
-					if existing.Content == serverIP || (recordType == "MX" && strings.Contains(existing.Content, fmt.Sprintf("%s.%s", mailserverSubdomain, domain))) {
+					// Check if content matches expected value
+					expectedContent := serverIP
+					if recordType == "AAAA" {
+						expectedContent = serverIPv6
+					}
+					if existing.Content == expectedContent || (recordType == "MX" && strings.Contains(existing.Content, fmt.Sprintf("%s.%s", mailserverSubdomain, domain))) {
 						return true, "already exists with correct value"
 					}
 					return false, ""
 				}
-				if recordType == "A" {
+				// For A and AAAA records, check if CNAME exists (conflict)
+				if recordType == "A" || recordType == "AAAA" {
 					cnameKey := fmt.Sprintf("%s:CNAME", name)
 					if _, ok := existingByNameType[cnameKey]; ok {
-						return true, "CNAME exists, skipping A record"
+						return true, fmt.Sprintf("CNAME exists, skipping %s record", recordType)
 					}
 				}
 				return false, ""
@@ -1605,6 +1615,20 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 				})
 			}
 
+			// AAAA record for root domain (if IPv6 is available)
+			if serverIPv6 != "" {
+				if skip, reason := shouldSkip("@", "AAAA"); skip {
+					fmt.Printf("  ℹ %s AAAA: %s\n", domain, reason)
+				} else {
+					recordsToCreate = append(recordsToCreate, HostingerRecord{
+						Type:    "AAAA",
+						Name:    "@",
+						Content: serverIPv6,
+						TTL:     300,
+					})
+				}
+			}
+
 			// A records for subdomains
 			for _, sub := range domainCfg.Subdomains {
 				if skip, reason := shouldSkip(sub.Name, "A"); skip {
@@ -1616,6 +1640,20 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 						Content: serverIP,
 						TTL:     300,
 					})
+				}
+
+				// AAAA record for subdomain (if IPv6 is available)
+				if serverIPv6 != "" {
+					if skip, reason := shouldSkip(sub.Name, "AAAA"); skip {
+						fmt.Printf("  ℹ %s.%s AAAA: %s\n", sub.Name, domain, reason)
+					} else {
+						recordsToCreate = append(recordsToCreate, HostingerRecord{
+							Type:    "AAAA",
+							Name:    sub.Name,
+							Content: serverIPv6,
+							TTL:     300,
+						})
+					}
 				}
 			}
 
@@ -1645,8 +1683,10 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 						name = name + "." + domain
 					}
 
+					// Use replaceRecords for A and AAAA records to overwrite any existing IP
+					// Use updateRecords for other record types to append without removing existing records
 					var err error
-					if r.Type == "A" {
+					if r.Type == "A" || r.Type == "AAAA" {
 						err = provider.replaceRecords(domain, []HostingerRecord{r})
 					} else {
 						err = provider.updateRecords(domain, []HostingerRecord{r})
@@ -1673,7 +1713,7 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 
 // UpdateDNSRecordsPostInstall configures SPF and DMARC records AFTER Ansible playbook execution
 // This is called after the mail server is configured
-func UpdateDNSRecordsPostInstall(providerName, providerType, apiToken string, domainCfg DomainConfig, serverIP string) error {
+func UpdateDNSRecordsPostInstall(providerName, providerType, apiToken string, domainCfg DomainConfig, serverIP, serverIPv6 string) error {
 	if providerName == "" || apiToken == "" || providerType != "external" {
 		return nil
 	}
@@ -1708,8 +1748,14 @@ func UpdateDNSRecordsPostInstall(providerName, providerType, apiToken string, do
 
 		var recordsToCreate []HostingerRecord
 
+		// Build SPF record with IPv4 and optionally IPv6
+		spfContent := fmt.Sprintf("v=spf1 ip4:%s", serverIP)
+		if serverIPv6 != "" {
+			spfContent += fmt.Sprintf(" ip6:%s", serverIPv6)
+		}
+		spfContent += " -all"
+
 		// Check SPF record
-		spfContent := fmt.Sprintf("v=spf1 ip4:%s -all", serverIP)
 		hasSPF := false
 		for _, r := range existingRecords {
 			if r.Type == "TXT" && r.Name == "@" && strings.HasPrefix(r.Content, "v=spf1") {

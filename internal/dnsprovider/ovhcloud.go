@@ -868,7 +868,7 @@ func (o *OVHCloudProvider) DeleteExistingDKIMRecords(domain, selector string) er
 }
 
 // UpdateDNSRecordsPostInstallOVH configures SPF and DMARC records AFTER Ansible for OVHcloud
-func UpdateDNSRecordsPostInstallOVH(creds OVHCloudCredentials, domainCfg DomainConfig, serverIP string) error {
+func UpdateDNSRecordsPostInstallOVH(creds OVHCloudCredentials, domainCfg DomainConfig, serverIP, serverIPv6 string) error {
 	domain := domainCfg.Name
 
 	// Check if mailserver role exists
@@ -899,17 +899,24 @@ func UpdateDNSRecordsPostInstallOVH(creds OVHCloudCredentials, domainCfg DomainC
 		fmt.Printf("    Warning: Failed to delete existing SPF records: %v\n", err)
 	}
 
+	// Build SPF record with IPv4 and optionally IPv6
+	spfContent := fmt.Sprintf("v=spf1 ip4:%s", serverIP)
+	if serverIPv6 != "" {
+		spfContent += fmt.Sprintf(" ip6:%s", serverIPv6)
+	}
+	spfContent += " -all"
+
 	// Create SPF record using type "SPF" (OVH specific) without quotes
 	spfRecord := OVHRecord{
 		FieldType: "SPF",
 		SubDomain: "",
-		Target:    fmt.Sprintf("v=spf1 ip4:%s -all", serverIP), // No quotes for SPF type
+		Target:    spfContent,
 		TTL:       14400,
 	}
 	if err := provider.CreateRecord(domain, spfRecord); err != nil {
 		fmt.Printf("    Warning: Failed to create SPF record: %v\n", err)
 	} else {
-		fmt.Printf("    %s SPF v=spf1 ip4:%s -all\n", domain, serverIP)
+		fmt.Printf("    %s SPF %s\n", domain, spfContent)
 	}
 
 	// Delete existing DMARC records first (only one DMARC allowed)

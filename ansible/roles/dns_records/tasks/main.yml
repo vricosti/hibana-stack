@@ -8,21 +8,25 @@
   set_fact:
     pdns_db_password: "{{ pdns_password_file['content'] | b64decode | trim }}"
 
-- name: Read DKIM public key
-  slurp:
-    src: /etc/opendkim/keys/{{ primary_domain }}/default.txt
+- name: Build mail container name
+  set_fact:
+    mail_container_name: "hibana-mail-{{ primary_domain | replace('.', '-') }}"
+
+- name: Read DKIM public key from Docker container
+  command: docker exec {{ mail_container_name }} cat /etc/opendkim/keys/{{ primary_domain }}/default.txt
   register: dkim_public_key_file
   ignore_errors: yes
+  changed_when: false
 
 - name: Extract DKIM public key value
   set_fact:
-    dkim_public_key: "{{ dkim_public_key_file['content'] | b64decode | regex_replace('\\s+', '') | regex_replace('\"', '') | regex_search('p=([A-Za-z0-9+/=]+)', '\\1') | first }}"
-  when: dkim_public_key_file is defined and not dkim_public_key_file.failed
+    dkim_public_key: "{{ dkim_public_key_file.stdout | regex_replace('\\s+', '') | regex_replace('\"', '') | regex_search('p=([A-Za-z0-9+/=]+)', '\\1') | first }}"
+  when: dkim_public_key_file is defined and dkim_public_key_file.rc == 0 and dkim_public_key_file.stdout != ''
 
 - name: Set empty DKIM key if not found
   set_fact:
     dkim_public_key: ""
-  when: dkim_public_key_file.failed is defined and dkim_public_key_file.failed
+  when: dkim_public_key_file.rc is defined and dkim_public_key_file.rc != 0
 
 - name: Detect server IPv6 address
   set_fact:

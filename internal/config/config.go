@@ -11,6 +11,7 @@ import (
 // Config represents the Hibana Stack configuration
 type Config struct {
 	ServerIP        string             `yaml:"server_ip"`
+	ServerIPv6      string             `yaml:"server_ipv6,omitempty"`
 	DNSProvider     *DNSProviderConfig `yaml:"dns_provider,omitempty"`
 	Domains         []Domain           `yaml:"domains"`
 	DomainRedirects []DomainRedirect   `yaml:"domain_redirects,omitempty"`
@@ -385,7 +386,16 @@ func (c *Config) GetDNSRecords(domain *Domain, dkimPublicKey string) []DNSRecord
 
 	primaryDomain := c.GetPrimaryDomainName()
 	mailserverSubdomain := c.GetMailserverSubdomain()
-	mailServer := fmt.Sprintf("%s.%s", mailserverSubdomain, primaryDomain)
+
+	// Each domain has its own mail server (per-domain mail containers)
+	mailServer := fmt.Sprintf("%s.%s", mailserverSubdomain, domain.Name)
+
+	// Build SPF record with IPv4 and optionally IPv6
+	spfContent := fmt.Sprintf("v=spf1 ip4:%s", c.ServerIP)
+	if c.ServerIPv6 != "" {
+		spfContent += fmt.Sprintf(" ip6:%s", c.ServerIPv6)
+	}
+	spfContent += " -all"
 
 	records := []DNSRecord{
 		// SOA record (required for PowerDNS to be authoritative)
@@ -397,11 +407,14 @@ func (c *Config) GetDNSRecords(domain *Domain, dkimPublicKey string) []DNSRecord
 		// A record for domain
 		{Type: "A", Name: "@", Content: c.ServerIP, TTL: 300},
 
-		// MX record - all domains point to the primary mail server
+		// A record for mail server subdomain (mx.domain.com)
+		{Type: "A", Name: mailserverSubdomain, Content: c.ServerIP, TTL: 300},
+
+		// MX record - points to this domain's own mail server
 		{Type: "MX", Name: "@", Content: mailServer, Priority: 10, TTL: 14400},
 
-		// SPF record
-		{Type: "TXT", Name: "@", Content: fmt.Sprintf("v=spf1 ip4:%s -all", c.ServerIP), TTL: 14400},
+		// SPF record (with IPv4 and IPv6 if available)
+		{Type: "TXT", Name: "@", Content: spfContent, TTL: 14400},
 
 		// DMARC record
 		{Type: "TXT", Name: "_dmarc", Content: fmt.Sprintf("v=DMARC1; p=none; rua=mailto:contact@%s", domain.Name), TTL: 3600},
@@ -409,6 +422,12 @@ func (c *Config) GetDNSRecords(domain *Domain, dkimPublicKey string) []DNSRecord
 		// CAA records for Let's Encrypt
 		{Type: "CAA", Name: "@", Content: `0 issue "letsencrypt.org"`, TTL: 14400},
 		{Type: "CAA", Name: "@", Content: `0 issuewild "letsencrypt.org"`, TTL: 14400},
+	}
+
+	// Add AAAA records if IPv6 is available
+	if c.ServerIPv6 != "" {
+		records = append(records, DNSRecord{Type: "AAAA", Name: "@", Content: c.ServerIPv6, TTL: 300})
+		records = append(records, DNSRecord{Type: "AAAA", Name: mailserverSubdomain, Content: c.ServerIPv6, TTL: 300})
 	}
 
 	// Add A records for subdomains
@@ -419,6 +438,15 @@ func (c *Config) GetDNSRecords(domain *Domain, dkimPublicKey string) []DNSRecord
 			Content: c.ServerIP,
 			TTL:     300,
 		})
+		// Add AAAA record for subdomain if IPv6 is available
+		if c.ServerIPv6 != "" {
+			records = append(records, DNSRecord{
+				Type:    "AAAA",
+				Name:    sub.Name,
+				Content: c.ServerIPv6,
+				TTL:     300,
+			})
+		}
 	}
 
 	// For primary domain, add NS1 A record
@@ -429,6 +457,15 @@ func (c *Config) GetDNSRecords(domain *Domain, dkimPublicKey string) []DNSRecord
 			Content: c.ServerIP,
 			TTL:     3600,
 		})
+		// Add NS1 AAAA record if IPv6 is available
+		if c.ServerIPv6 != "" {
+			records = append(records, DNSRecord{
+				Type:    "AAAA",
+				Name:    "ns1",
+				Content: c.ServerIPv6,
+				TTL:     3600,
+			})
+		}
 	}
 
 	// Add DKIM record if key is provided

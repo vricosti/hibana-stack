@@ -1,0 +1,6 @@
+---
+- name: Restart mail proxy
+  docker_compose:
+    project_src: /srv/mail-proxy
+    state: present
+    restarted: yes

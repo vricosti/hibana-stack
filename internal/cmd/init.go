@@ -180,6 +180,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 				}
 			}
 
+			// Get server IPv6 address if available
+			serverIPv6, _ := system.GetServerIPv6()
+
 			// Use OVH-specific function if provider is OVH
 			if cfg.DNSProvider.Name == "ovh" || cfg.DNSProvider.Name == "ovhcloud" {
 				ovhCreds := dnsprovider.OVHCloudCredentials{
@@ -188,13 +191,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 					ApplicationSecret: cfg.DNSProvider.GetCredentialValue("application_secret"),
 					ConsumerKey:       cfg.DNSProvider.GetCredentialValue("consumer_key"),
 				}
-				// Get server IPv6 address if available
-				serverIPv6, _ := system.GetServerIPv6()
 				if err := dnsprovider.UpdateDNSRecordsPreInstallOVH(ovhCreds, domainCfg, cfg.ServerIP, serverIPv6); err != nil {
 					return fmt.Errorf("DNS pre-install configuration failed for %s: %w\n\nPlease check your DNS provider settings and try again.", domain.Name, err)
 				}
 			} else {
-				if err := dnsprovider.UpdateDNSRecordsPreInstall(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.GetCredentialValue("api_token"), domainCfg, cfg.ServerIP); err != nil {
+				if err := dnsprovider.UpdateDNSRecordsPreInstall(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.GetCredentialValue("api_token"), domainCfg, cfg.ServerIP, serverIPv6); err != nil {
 					return fmt.Errorf("DNS pre-install configuration failed for %s: %w\n\nPlease check your DNS provider settings and try again.", domain.Name, err)
 				}
 			}
@@ -250,6 +251,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("STEP: DNS POST-CONFIGURATION")
 		fmt.Println(string(make([]byte, 80)))
 
+		// Get server IPv6 address for SPF record
+		serverIPv6, _ := system.GetServerIPv6()
+
 		// Configure SPF and DMARC records for all domains
 		for _, domain := range cfg.Domains {
 			domainCfg := dnsprovider.DomainConfig{
@@ -271,11 +275,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 					ApplicationSecret: cfg.DNSProvider.GetCredentialValue("application_secret"),
 					ConsumerKey:       cfg.DNSProvider.GetCredentialValue("consumer_key"),
 				}
-				if err := dnsprovider.UpdateDNSRecordsPostInstallOVH(ovhCreds, domainCfg, cfg.ServerIP); err != nil {
+				if err := dnsprovider.UpdateDNSRecordsPostInstallOVH(ovhCreds, domainCfg, cfg.ServerIP, serverIPv6); err != nil {
 					fmt.Printf("\n  Warning: DNS post-install configuration failed for %s: %v\n", domain.Name, err)
 				}
 			} else {
-				if err := dnsprovider.UpdateDNSRecordsPostInstall(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.GetCredentialValue("api_token"), domainCfg, cfg.ServerIP); err != nil {
+				if err := dnsprovider.UpdateDNSRecordsPostInstall(cfg.DNSProvider.Name, cfg.DNSProvider.Type, cfg.DNSProvider.GetCredentialValue("api_token"), domainCfg, cfg.ServerIP, serverIPv6); err != nil {
 					fmt.Printf("\n  Warning: DNS post-install configuration failed for %s: %v\n", domain.Name, err)
 				}
 			}
@@ -284,7 +288,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// Configure PTR records if mailserver role is enabled on primary domain
 		if primaryDomain.HasSubdomainRole("mailserver") {
 			mailHostname := fmt.Sprintf("%s.%s", cfg.GetMailserverSubdomain(), primaryDomain.Name)
-			serverIPv6, _ := system.GetServerIPv6()
 
 			if cfg.DNSProvider.Name == "ovh" || cfg.DNSProvider.Name == "ovhcloud" {
 				ovhCreds := dnsprovider.OVHCloudCredentials{
