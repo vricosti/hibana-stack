@@ -47,10 +47,11 @@ Hibana Stack automates the setup of a production-ready server infrastructure on 
 ## Quick Start
 
 ```bash
+sudo -i
 git clone https://github.com/vricosti/hibana-stack.git
 cd hibana-stack
-sudo ./setup.sh
-sudo ./bin/hibana init
+./setup.sh
+./hibana init
 ```
 
 ## Configuration
