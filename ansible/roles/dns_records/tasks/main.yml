@@ -167,7 +167,7 @@
     login_host: localhost
     query: >
       INSERT INTO records (domain_id, name, type, content, ttl, prio)
-      VALUES ({{ domain_id }}, '{{ primary_domain }}', 'MX', 'mx.{{ primary_domain }}', 14400, 10)
+      VALUES ({{ domain_id }}, '{{ primary_domain }}', 'MX', '{{ mailserver_subdomain }}.{{ primary_domain }}', 14400, 10)
   become_user: postgres
 
 - name: Insert SPF TXT record

@@ -68,7 +68,7 @@ func InteractiveConfig() (*config.Config, error) {
 				IsPrimary: true,
 				Subdomains: []config.Subdomain{
 					{Name: "adm", Role: "webadmin"},
-					{Name: "mail", Role: "mailserver"},
+					{Name: "mx", Role: "mailserver"},
 					{Name: "webmail", Role: "webmail"},
 					{Name: "www", Role: "website"},
 				},

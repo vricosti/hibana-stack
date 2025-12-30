@@ -373,7 +373,11 @@ func (s *DNSService) formatRecordName(name, domainName string) string {
 }
 
 // CreateDefaultRecords creates default DNS records for a new domain
-func (s *DNSService) CreateDefaultRecords(domainID int, serverIP string) error {
+func (s *DNSService) CreateDefaultRecords(domainID int, serverIP, mailserverSubdomain string) error {
+	if mailserverSubdomain == "" {
+		mailserverSubdomain = "mx" // default fallback
+	}
+
 	// Get domain name
 	var domainName string
 	err := s.hibanaDB.QueryRow("SELECT name FROM domains WHERE id = $1", domainID).Scan(&domainName)
@@ -385,8 +389,8 @@ func (s *DNSService) CreateDefaultRecords(domainID int, serverIP string) error {
 	defaultRecords := []models.DNSRecordCreate{
 		{Name: "@", Type: "A", Content: serverIP, TTL: 300},
 		{Name: "www", Type: "A", Content: serverIP, TTL: 300},
-		{Name: "mx", Type: "A", Content: serverIP, TTL: 3600},
-		{Name: "@", Type: "MX", Content: fmt.Sprintf("mx.%s", domainName), TTL: 14400, Priority: 10},
+		{Name: mailserverSubdomain, Type: "A", Content: serverIP, TTL: 3600},
+		{Name: "@", Type: "MX", Content: fmt.Sprintf("%s.%s", mailserverSubdomain, domainName), TTL: 14400, Priority: 10},
 		{Name: "@", Type: "TXT", Content: fmt.Sprintf(`"v=spf1 ip4:%s -all"`, serverIP), TTL: 14400},
 	}
 

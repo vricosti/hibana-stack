@@ -67,10 +67,10 @@ services:
     networks:
       - hibana-network
     extra_hosts:
-      - "mail.{{ primary_domain }}:host-gateway"
+      - "{{ mailserver_subdomain }}.{{ primary_domain }}:host-gateway"
     environment:
-      - ROUNDCUBEMAIL_DEFAULT_HOST=mail.{{ primary_domain }}
-      - ROUNDCUBEMAIL_SMTP_SERVER=mail.{{ primary_domain }}
+      - ROUNDCUBEMAIL_DEFAULT_HOST={{ mailserver_subdomain }}.{{ primary_domain }}
+      - ROUNDCUBEMAIL_SMTP_SERVER={{ mailserver_subdomain }}.{{ primary_domain }}
       - ROUNDCUBEMAIL_DEFAULT_PORT=143
       - ROUNDCUBEMAIL_SMTP_PORT=587
       - ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=30M

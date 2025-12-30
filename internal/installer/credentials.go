@@ -9,11 +9,12 @@ import (
 
 // CredentialsSummary stores all credentials generated during installation
 type CredentialsSummary struct {
-	Domain            string
-	ServerIP          string
-	DatabasePasswords map[string]string
-	EmailAccounts     []EmailAccountCreds
-	GeneratedAt       time.Time
+	Domain              string
+	ServerIP            string
+	MailserverSubdomain string
+	DatabasePasswords   map[string]string
+	EmailAccounts       []EmailAccountCreds
+	GeneratedAt         time.Time
 }
 
 // EmailAccountCreds stores email account credentials
@@ -31,10 +32,11 @@ func (i *Installer) GetCredentialsSummary() (*CredentialsSummary, error) {
 	}
 
 	summary := &CredentialsSummary{
-		Domain:            primaryDomain.Name,
-		ServerIP:          i.config.ServerIP,
-		DatabasePasswords: make(map[string]string),
-		GeneratedAt:       time.Now(),
+		Domain:              primaryDomain.Name,
+		ServerIP:            i.config.ServerIP,
+		MailserverSubdomain: i.config.GetMailserverSubdomain(),
+		DatabasePasswords:   make(map[string]string),
+		GeneratedAt:         time.Now(),
 	}
 
 	// Collect database passwords
@@ -121,8 +123,8 @@ The following email accounts have been created:
    Password: %s
    Full Name: %s
 
-   IMAP Server: mx.%s:993 (SSL/TLS)
-   SMTP Server: mx.%s:587 (STARTTLS)
+   IMAP Server: %s.%s:993 (SSL/TLS)
+   SMTP Server: %s.%s:587 (STARTTLS)
    Webmail: https://webmail.%s
 
 `,
@@ -131,7 +133,9 @@ The following email accounts have been created:
 			account.Email,
 			account.Password,
 			account.FullName,
+			summary.MailserverSubdomain,
 			summary.Domain,
+			summary.MailserverSubdomain,
 			summary.Domain,
 			summary.Domain,
 		)
@@ -148,8 +152,8 @@ Web Interfaces:
   - Webmail:       https://webmail.` + summary.Domain + `
 
 Mail Server:
-  - IMAP:          mx.` + summary.Domain + `:993 (SSL/TLS)
-  - SMTP:          mx.` + summary.Domain + `:587 (STARTTLS)
+  - IMAP:          ` + summary.MailserverSubdomain + `.` + summary.Domain + `:993 (SSL/TLS)
+  - SMTP:          ` + summary.MailserverSubdomain + `.` + summary.Domain + `:587 (STARTTLS)
 
 DNS Server:
   - Nameserver:    ns1.` + summary.Domain + ` (` + summary.ServerIP + `)

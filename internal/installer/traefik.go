@@ -179,6 +179,7 @@ func (i *Installer) createDockerCompose(dir string) error {
 
 	domain := primaryDomain.Name
 	domainDash := strings.ReplaceAll(domain, ".", "-")
+	mailserverSubdomain := i.config.GetMailserverSubdomain()
 
 	compose := fmt.Sprintf(`version: '3.8'
 
@@ -235,8 +236,8 @@ services:
     networks:
       - hibana-network
     environment:
-      - ROUNDCUBEMAIL_DEFAULT_HOST=mx.%s
-      - ROUNDCUBEMAIL_SMTP_SERVER=mx.%s
+      - ROUNDCUBEMAIL_DEFAULT_HOST=%s.%s
+      - ROUNDCUBEMAIL_SMTP_SERVER=%s.%s
       - ROUNDCUBEMAIL_DEFAULT_PORT=143
       - ROUNDCUBEMAIL_SMTP_PORT=587
       - ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=30M
@@ -256,7 +257,7 @@ networks:
 		// adm service
 		domain, domainDash, domain, domainDash, domainDash, domainDash,
 		// webmail service
-		domain, domain, domainDash, domain, domainDash, domainDash, domainDash)
+		mailserverSubdomain, domain, mailserverSubdomain, domain, domainDash, domain, domainDash, domainDash, domainDash)
 
 	composePath := filepath.Join(dir, "docker-compose.yml")
 	return os.WriteFile(composePath, []byte(compose), 0644)

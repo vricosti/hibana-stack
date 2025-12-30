@@ -16,7 +16,7 @@ smtp_tls_security_level=may
 smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
 
 # Basic configuration
-myhostname = mail.{{ primary_domain }}
+myhostname = {{ mailserver_subdomain }}.{{ primary_domain }}
 mydomain = {{ primary_domain }}
 myorigin = $mydomain
 mydestination = $myhostname, localhost.$mydomain, localhost
