@@ -57,6 +57,13 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 		return fmt.Errorf("invalid primary domain name: %w", err)
 	}
 
+	// Get Unicode version for display (with accents)
+	primaryDomainDisplay, err := idna.ToUnicode(primaryDomain.Name)
+	if err != nil {
+		// Fallback to original name if conversion fails
+		primaryDomainDisplay = primaryDomain.Name
+	}
+
 	// Convert all domain names to Punycode for system compatibility
 	domainsASCII := make([]config.Domain, len(cfg.Domains))
 	for i, domain := range cfg.Domains {
@@ -89,16 +96,17 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 
 	// Template data structure for backwards compatibility
 	type TemplateData struct {
-		ServerIP            string
-		DNSProvider         *config.DNSProviderConfig
-		Domains             []config.Domain
-		PrimaryDomain       string
-		Subdomains          []config.Subdomain       // For backwards compatibility with Ansible roles
-		WebAdmin            *config.WebAdminConfig   // Extracted from primary domain for backwards compatibility
-		DomainUser          *config.DomainUserConfig // Extracted from primary domain for backwards compatibility
-		SystemUsers         []config.SystemUser
-		DomainRedirects     []config.DomainRedirect
-		MailserverSubdomain string // Dynamic mailserver subdomain name (e.g., "mx", "mail", etc.)
+		ServerIP             string
+		DNSProvider          *config.DNSProviderConfig
+		Domains              []config.Domain
+		PrimaryDomain        string
+		PrimaryDomainDisplay string                   // Unicode version for display (with accents)
+		Subdomains           []config.Subdomain       // For backwards compatibility with Ansible roles
+		WebAdmin             *config.WebAdminConfig   // Extracted from primary domain for backwards compatibility
+		DomainUser           *config.DomainUserConfig // Extracted from primary domain for backwards compatibility
+		SystemUsers          []config.SystemUser
+		DomainRedirects      []config.DomainRedirect
+		MailserverSubdomain  string // Dynamic mailserver subdomain name (e.g., "mx", "mail", etc.)
 	}
 
 	// Extract mailserver subdomain name from primary domain
@@ -108,16 +116,17 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 	}
 
 	data := TemplateData{
-		ServerIP:            cfg.ServerIP,
-		DNSProvider:         cfg.DNSProvider,
-		Domains:             domainsASCII,             // Use Punycode versions
-		PrimaryDomain:       primaryDomainASCII,       // Use Punycode version
-		Subdomains:          primaryDomain.Subdomains, // Extract subdomains from primary domain
-		WebAdmin:            primaryDomain.WebAdmin,   // Extract webadmin from primary domain
-		DomainUser:          primaryDomain.DomainUser, // Extract domain_user from primary domain
-		SystemUsers:         cfg.SystemUsers,
-		DomainRedirects:     redirectsASCII,           // Use Punycode versions
-		MailserverSubdomain: mailserverSubdomain,
+		ServerIP:             cfg.ServerIP,
+		DNSProvider:          cfg.DNSProvider,
+		Domains:              domainsASCII,             // Use Punycode versions
+		PrimaryDomain:        primaryDomainASCII,       // Use Punycode version
+		PrimaryDomainDisplay: primaryDomainDisplay,     // Unicode version for display
+		Subdomains:           primaryDomain.Subdomains, // Extract subdomains from primary domain
+		WebAdmin:             primaryDomain.WebAdmin,   // Extract webadmin from primary domain
+		DomainUser:           primaryDomain.DomainUser, // Extract domain_user from primary domain
+		SystemUsers:          cfg.SystemUsers,
+		DomainRedirects:      redirectsASCII,           // Use Punycode versions
+		MailserverSubdomain:  mailserverSubdomain,
 	}
 
 	// Template for group_vars/all.yml
@@ -150,6 +159,9 @@ dns_provider:
 
 # Primary domain (for backwards compatibility)
 primary_domain: {{ .PrimaryDomain }}
+
+# Primary domain display name (Unicode version with accents for display)
+primary_domain_display: "{{ .PrimaryDomainDisplay }}"
 
 # Mailserver subdomain name (dynamic - e.g., "mx", "mail", etc.)
 mailserver_subdomain: {{ .MailserverSubdomain }}
