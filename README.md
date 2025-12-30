@@ -18,19 +18,19 @@ Hibana Stack automates the setup of a production-ready server infrastructure on 
 ## Architecture
 
 ```
-                                    ┌─────────────────────────────────────────┐
-                                    │              Linux Server               │
-                                    │                                         │
-    Internet ──────► Traefik ──────►│  ┌─────────┐  ┌─────────┐  ┌─────────┐  │
-                   (Reverse Proxy)  │  │   adm   │  │ webmail │  │   www   │  │
-                   + SSL/TLS        │  │ Docker  │  │ Docker  │  │ Docker  │  │
-                                    │  └─────────┘  └─────────┘  └─────────┘  │
-                                    │                                         │
-                                    │  ┌─────────────────────────────────────┐│
-                                    │  │  Mail Server (Postfix + Dovecot)    ││
-                                    │  │  DMARC, DKIM, SPF, SpamAssassin     ││
-                                    │  └─────────────────────────────────────┘│
-                                    └─────────────────────────────────────────┘
+                                    ┌───────────────────────────────────────────┐
+                                    │              Linux Server                 │
+                                    │                                           │
+    Internet ──────► Traefik ──────►│  ┌─────────┐  ┌─────────┐  ┌─────────┐    │
+                   (Reverse Proxy)  │  │   adm   │  │ webmail │  │   www   │    │
+                   + SSL/TLS        │  │ Docker  │  │ Docker  │  │ Docker  │    │
+                                    │  └─────────┘  └─────────┘  └─────────┘    │
+                                    │                                           │
+                                    │  ┌─────────────────────────────────────┐  │
+                                    │  │  Mail Server (Postfix + Dovecot)    │  │
+                                    │  │  DMARC, DKIM, SPF, SpamAssassin     │  │
+                                    │  └─────────────────────────────────────┘  │
+                                    └───────────────────────────────────────────┘
 ```
 
 ### Components
