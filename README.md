@@ -21,14 +21,14 @@ Hibana Stack automates the setup of a production-ready server infrastructure on 
                                     ┌─────────────────────────────────────────┐
                                     │              Linux Server               │
                                     │                                         │
-    Internet ──────► Traefik ──────►│  ┌─────────┐  ┌─────────┐  ┌─────────┐ │
-                   (Reverse Proxy)  │  │   adm   │  │ webmail │  │   www   │ │
-                   + SSL/TLS        │  │ Docker  │  │ Docker  │  │ Docker  │ │
-                                    │  └─────────┘  └─────────┘  └─────────┘ │
+    Internet ──────► Traefik ──────►│  ┌─────────┐  ┌─────────┐  ┌─────────┐  │
+                   (Reverse Proxy)  │  │   adm   │  │ webmail │  │   www   │  │
+                   + SSL/TLS        │  │ Docker  │  │ Docker  │  │ Docker  │  │
+                                    │  └─────────┘  └─────────┘  └─────────┘  │
                                     │                                         │
                                     │  ┌─────────────────────────────────────┐│
-                                    │  │  Mail Server (Postfix + Dovecot)   ││
-                                    │  │  DMARC, DKIM, SPF, SpamAssassin    ││
+                                    │  │  Mail Server (Postfix + Dovecot)    ││
+                                    │  │  DMARC, DKIM, SPF, SpamAssassin     ││
                                     │  └─────────────────────────────────────┘│
                                     └─────────────────────────────────────────┘
 ```
