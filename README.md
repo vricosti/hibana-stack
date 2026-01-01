@@ -4,7 +4,8 @@
 
 # Hibana Stack
 
-> **Warning**: This project is experimental. Do not use in production unless you know what you are doing.
+> [!WARNING]
+> **This project is experimental. Do not use in production unless you know what you are doing.**
 
 A Go CLI utility that configures a complete multi-domain server with DNS, mail, and web services in one command.
 
