@@ -1,48 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDomain } from '../context/DomainContext';
-import { domainAPI, dnsProviderAPI } from '../services/api';
-import DomainModal from '../components/DomainModal';
+import { domainAPI } from '../services/api';
 
 export default function Domains() {
   const navigate = useNavigate();
   const { domains, loading, refreshDomains, selectDomain } = useDomain();
-  const [showDomainModal, setShowDomainModal] = useState(false);
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(null);
-  const [dnsProviders, setDnsProviders] = useState([]);
-  const [loadingProviders, setLoadingProviders] = useState(true);
-
-  useEffect(() => {
-    loadProviders();
-  }, []);
-
-  const loadProviders = async () => {
-    try {
-      setLoadingProviders(true);
-      const providers = await dnsProviderAPI.getAll();
-      setDnsProviders(providers || []);
-    } catch (err) {
-      console.error('Failed to load DNS providers:', err);
-    } finally {
-      setLoadingProviders(false);
-    }
-  };
-
-  const handleAddDomain = () => {
-    if (dnsProviders.length === 0) {
-      setError('Please add a DNS provider first (go to DNS Providers page)');
-      return;
-    }
-    setShowDomainModal(true);
-  };
-
-  const handleDomainModalClose = (refresh) => {
-    setShowDomainModal(false);
-    if (refresh) {
-      refreshDomains();
-    }
-  };
 
   const handleSelectDomain = (domain) => {
     selectDomain(domain);
@@ -73,7 +38,7 @@ export default function Domains() {
     }
   };
 
-  if (loading || loadingProviders) {
+  if (loading) {
     return <div className="loading"><div className="spinner"></div></div>;
   }
 
@@ -84,9 +49,6 @@ export default function Domains() {
     <div>
       <div className="page-header">
         <h2>Domains</h2>
-        <button className="btn btn-primary" onClick={handleAddDomain}>
-          Add Domain
-        </button>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -147,15 +109,8 @@ export default function Domains() {
         </div>
       ) : (
         <div className="empty-state">
-          <p>No domains configured. Add your first domain to get started.</p>
+          <p>No domains configured. Use <code>hibana init</code> to add domains.</p>
         </div>
-      )}
-
-      {showDomainModal && (
-        <DomainModal
-          onClose={handleDomainModalClose}
-          dnsProviders={dnsProviders}
-        />
       )}
     </div>
   );
