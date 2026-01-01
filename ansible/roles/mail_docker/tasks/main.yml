@@ -20,6 +20,32 @@
   debug:
     msg: "Mail network gateway: {{ mail_network_gateway_ip }}"
 
+- name: Get PostgreSQL version
+  shell: "ls /etc/postgresql/ | head -1"
+  register: pg_version_result
+  changed_when: false
+
+- name: Check if mail network gateway is in PostgreSQL listen_addresses
+  shell: "grep -E '^listen_addresses' /etc/postgresql/{{ pg_version_result.stdout }}/main/postgresql.conf"
+  register: pg_listen_check
+  changed_when: false
+  failed_when: false
+
+- name: Add mail network gateway to PostgreSQL listen_addresses
+  lineinfile:
+    path: "/etc/postgresql/{{ pg_version_result.stdout }}/main/postgresql.conf"
+    regexp: '^listen_addresses\s*='
+    line: "listen_addresses = '{{ pg_listen_check.stdout | regex_replace(\"listen_addresses\\s*=\\s*'\", '') | regex_replace(\"'$\", '') }},{{ mail_network_gateway_ip }}'"
+    state: present
+  when: mail_network_gateway_ip not in pg_listen_check.stdout
+  register: pg_listen_changed
+
+- name: Restart PostgreSQL if config changed
+  service:
+    name: postgresql
+    state: restarted
+  when: pg_listen_changed.changed | default(false)
+
 - name: Create mail proxy directory
   file:
     path: /srv/mail-proxy

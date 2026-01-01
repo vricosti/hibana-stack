@@ -19,8 +19,10 @@ echo "${MAILSERVER_HOSTNAME}" > /etc/hostname
 # Note: 'hostname' command requires CAP_SYS_ADMIN in Docker, so we skip it
 # Services will read from /etc/hostname instead
 
-# Create mail directory for this domain
+# Create mail directory for this domain and fix permissions
 mkdir -p "/var/mail/vhosts/${DOMAIN}"
+chown vmail:vmail /var/mail/vhosts
+chmod 755 /var/mail/vhosts
 chown -R vmail:vmail "/var/mail/vhosts/${DOMAIN}"
 
 # Generate self-signed certificate if not provided
@@ -291,6 +293,27 @@ service auth {
     mode = 0660
     user = postfix
     group = postfix
+  }
+}
+
+# IMAP/POP3 service ports
+service imap-login {
+  inet_listener imap {
+    port = 143
+  }
+  inet_listener imaps {
+    port = 993
+    ssl = yes
+  }
+}
+
+service pop3-login {
+  inet_listener pop3 {
+    port = 110
+  }
+  inet_listener pop3s {
+    port = 995
+    ssl = yes
   }
 }
 

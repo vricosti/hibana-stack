@@ -47,7 +47,7 @@
     state: directory
     owner: "{{ domain_username }}"
     group: hibana-domains
-    mode: '0755'
+    mode: '0750'
 
 - name: Create .ssh directory for domain user
   file:

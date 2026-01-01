@@ -11,9 +11,9 @@
   file:
     path: "{{ mail_container_path }}/{{ item }}"
     state: directory
-    owner: "{{ domain_path_safe }}"
-    group: hibana-domains
-    mode: '0755'
+    owner: root
+    group: root
+    mode: '0700'
   loop:
     - ''
     - 'build'

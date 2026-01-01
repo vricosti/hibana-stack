@@ -26,7 +26,7 @@
     state: directory
     owner: "{{ domain_username if domain_user is defined else 'root' }}"
     group: "{{ 'hibana-domains' if domain_user is defined else 'root' }}"
-    mode: '0755'
+    mode: '0750'
 
 - name: Create Traefik network
   docker_network:
@@ -111,7 +111,7 @@
         state: directory
         owner: "{{ domain_username }}"
         group: hibana-domains
-        mode: '0755'
+        mode: '0750'
       loop:
         - ''
         - 'src'
@@ -181,7 +181,7 @@
         state: directory
         owner: "{{ domain_username }}"
         group: hibana-domains
-        mode: '0755'
+        mode: '0750'
       loop:
         - ''
         - 'data'
@@ -192,7 +192,7 @@
         path: "{{ domain_path }}/webmail/data"
         owner: '33'
         group: '33'
-        mode: '0755'
+        mode: '0750'
 
     - name: Create webmail .env file
       template:
@@ -206,6 +206,14 @@
       template:
         src: webmail-docker-compose.yml.j2
         dest: "{{ domain_path }}/webmail/docker-compose.yml"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Create webmail custom config
+      template:
+        src: webmail-config.inc.php.j2
+        dest: "{{ domain_path }}/webmail/custom.inc.php"
         owner: root
         group: root
         mode: '0644'
@@ -237,7 +245,7 @@
     state: directory
     owner: "{{ domain_username }}"
     group: hibana-domains
-    mode: '0755'
+    mode: '0750'
   loop:
     - ''
     - 'app'
