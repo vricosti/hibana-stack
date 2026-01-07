@@ -112,14 +112,15 @@
         mode: '0755'
       loop:
         - ''
-        - 'src'
-        - 'nginx'
+        - '_default'
+        - '_default/src'
+        - '_default/nginx'
         - 'logs'
 
     - name: Copy www Dockerfile
       copy:
         src: www-Dockerfile
-        dest: "{{ domain_path }}/www/src/Dockerfile"
+        dest: "{{ domain_path }}/www/_default/src/Dockerfile"
         owner: root
         group: root
         mode: '0644'
@@ -127,7 +128,7 @@
     - name: Create www index.html
       template:
         src: www-index.html.j2
-        dest: "{{ domain_path }}/www/src/index.html"
+        dest: "{{ domain_path }}/www/_default/src/index.html"
         owner: root
         group: root
         mode: '0644'
@@ -135,7 +136,7 @@
     - name: Create www nginx configuration
       template:
         src: www-nginx.conf.j2
-        dest: "{{ domain_path }}/www/nginx/default.conf"
+        dest: "{{ domain_path }}/www/_default/nginx/default.conf"
         owner: root
         group: root
         mode: '0644'
@@ -143,20 +144,20 @@
     - name: Create www docker-compose
       template:
         src: www-docker-compose.yml.j2
-        dest: "{{ domain_path }}/www/docker-compose.yml"
+        dest: "{{ domain_path }}/www/_default/docker-compose.yml"
         owner: root
         group: root
         mode: '0644'
 
     - name: Stop www service (cleanup)
       docker_compose:
-        project_src: "{{ domain_path }}/www"
+        project_src: "{{ domain_path }}/www/_default"
         state: absent
       ignore_errors: yes
 
     - name: Start www service
       docker_compose:
-        project_src: "{{ domain_path }}/www"
+        project_src: "{{ domain_path }}/www/_default"
         build: yes
         state: present
       register: www_result
