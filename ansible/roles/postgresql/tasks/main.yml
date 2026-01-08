@@ -133,15 +133,47 @@
   until: pg_ready.rc == 0
   changed_when: false
 
-- name: Generate random password for hibana database user
+- name: Check if hibana password file exists
+  stat:
+    path: /etc/hibana/passwords/hibana
+  register: hibana_password_file
+
+- name: Check if pdns password file exists
+  stat:
+    path: /etc/hibana/passwords/pdns
+  register: pdns_password_file
+
+- name: Read existing hibana password
+  slurp:
+    src: /etc/hibana/passwords/hibana
+  register: hibana_password_content
+  when: hibana_password_file.stat.exists
+
+- name: Read existing pdns password
+  slurp:
+    src: /etc/hibana/passwords/pdns
+  register: pdns_password_content
+  when: pdns_password_file.stat.exists
+
+- name: Set hibana password from existing file
+  set_fact:
+    hibana_db_password: "{{ hibana_password_content.content | b64decode | trim }}"
+  when: hibana_password_file.stat.exists
+
+- name: Generate new hibana password if not exists
   set_fact:
     hibana_db_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
-  run_once: true
+  when: not hibana_password_file.stat.exists
 
-- name: Generate random password for pdns database user
+- name: Set pdns password from existing file
+  set_fact:
+    pdns_db_password: "{{ pdns_password_content.content | b64decode | trim }}"
+  when: pdns_password_file.stat.exists
+
+- name: Generate new pdns password if not exists
   set_fact:
     pdns_db_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
-  run_once: true
+  when: not pdns_password_file.stat.exists
 
 - name: Create hibana database
   postgresql_db:

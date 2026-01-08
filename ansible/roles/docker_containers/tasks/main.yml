@@ -109,6 +109,8 @@
       file:
         path: "{{ domain_path }}/www/{{ item }}"
         state: directory
+        owner: "{{ domain_username }}"
+        group: hibana-domains
         mode: '0755'
       loop:
         - ''
@@ -178,6 +180,8 @@
       file:
         path: "{{ domain_path }}/webmail/{{ item }}"
         state: directory
+        owner: "{{ domain_username }}"
+        group: hibana-domains
         mode: '0755'
       loop:
         - ''
@@ -232,6 +236,8 @@
   file:
     path: "{{ domain_path }}/adm/{{ item }}"
     state: directory
+    owner: "{{ domain_username }}"
+    group: hibana-domains
     mode: '0755'
   loop:
     - ''

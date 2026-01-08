@@ -1,4 +1,5 @@
 version: '3.8'
+name: www-{{ primary_domain | replace('.', '-') }}
 
 services:
   web:
