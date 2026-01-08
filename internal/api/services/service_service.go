@@ -60,9 +60,13 @@ func (s *ServiceService) ListServices(domainName string) ([]models.Service, erro
 		servicePath := filepath.Join(domainPath, serviceName)
 
 		// Check if it has a docker-compose.yml
+		// First check in service root, then in 'current' symlink directory
 		composePath := filepath.Join(servicePath, "docker-compose.yml")
 		if _, err := os.Stat(composePath); os.IsNotExist(err) {
-			continue
+			composePath = filepath.Join(servicePath, "current", "docker-compose.yml")
+			if _, err := os.Stat(composePath); os.IsNotExist(err) {
+				continue
+			}
 		}
 
 		// Determine role and deployability based on service name
@@ -255,7 +259,7 @@ func (s *ServiceService) DeleteSubdomain(domainName, subdomainName string) error
 	composePath := filepath.Join(domainPath, subdomainName, "docker-compose.yml")
 
 	if _, err := os.Stat(composePath); err == nil {
-		cmd := exec.Command("docker-compose", "-f", composePath, "down", "--rmi", "local", "-v")
+		cmd := exec.Command("docker", "compose", "-f", composePath, "down", "--rmi", "local", "-v")
 		cmd.Run() // Ignore errors
 	}
 
@@ -545,7 +549,7 @@ func (s *ServiceService) StartService(domainName, serviceName string) error {
 		return fmt.Errorf("docker-compose.yml not found for service %s", serviceName)
 	}
 
-	cmd := exec.Command("docker-compose", "-f", composePath, "up", "-d")
+	cmd := exec.Command("docker", "compose", "-f", composePath, "up", "-d")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start service: %w, output: %s", err, string(output))
@@ -563,7 +567,7 @@ func (s *ServiceService) StopService(domainName, serviceName string) error {
 		return fmt.Errorf("docker-compose.yml not found for service %s", serviceName)
 	}
 
-	cmd := exec.Command("docker-compose", "-f", composePath, "down")
+	cmd := exec.Command("docker", "compose", "-f", composePath, "down")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to stop service: %w, output: %s", err, string(output))
@@ -581,7 +585,7 @@ func (s *ServiceService) RestartService(domainName, serviceName string) error {
 		return fmt.Errorf("docker-compose.yml not found for service %s", serviceName)
 	}
 
-	cmd := exec.Command("docker-compose", "-f", composePath, "restart")
+	cmd := exec.Command("docker", "compose", "-f", composePath, "restart")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to restart service: %w, output: %s", err, string(output))
@@ -636,7 +640,7 @@ func (s *ServiceService) Deploy(domainName, serviceName string, req *models.Depl
 	}
 
 	if _, err := os.Stat(activeComposePath); err == nil {
-		cmd := exec.Command("docker-compose", "-f", activeComposePath, "down")
+		cmd := exec.Command("docker", "compose", "-f", activeComposePath, "down")
 		cmdOutput, _ := cmd.CombinedOutput()
 		output.WriteString(string(cmdOutput))
 	}
@@ -756,7 +760,7 @@ func (s *ServiceService) Deploy(domainName, serviceName string, req *models.Depl
 	// Update container name in compose file to match domain
 	output.WriteString(fmt.Sprintf("Using compose file: %s\n", filepath.Base(activeComposePath)))
 
-	cmd := exec.Command("docker-compose", "-f", activeComposePath, "up", "-d", "--build")
+	cmd := exec.Command("docker", "compose", "-f", activeComposePath, "up", "-d", "--build")
 	cmd.Dir = servicePath
 	cmdOutput, err := cmd.CombinedOutput()
 	output.WriteString(string(cmdOutput))

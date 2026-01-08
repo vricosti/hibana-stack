@@ -12,7 +12,7 @@ var requiredPackages = []string{
 	"postgresql",
 	"postgresql-contrib",
 	"docker.io",
-	"docker-compose",
+	"docker-compose-v2",
 	"postfix",
 	"dovecot-core",
 	"dovecot-imapd",

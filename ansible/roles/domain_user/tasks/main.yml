@@ -89,10 +89,10 @@
     dest: "/etc/sudoers.d/hibana-{{ domain_username }}"
     content: |
       # Allow {{ domain_username }} to manage docker containers for {{ primary_domain }}
-      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f {{ domain_path }}/* up -d --build
-      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f {{ domain_path }}/* down
-      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f {{ domain_path }}/* restart
-      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker-compose -f {{ domain_path }}/* logs *
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker compose -f {{ domain_path }}/* up -d --build
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker compose -f {{ domain_path }}/* down
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker compose -f {{ domain_path }}/* restart
+      {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker compose -f {{ domain_path }}/* logs *
       {{ domain_username }} ALL=(root) NOPASSWD: /usr/bin/docker logs *{{ domain_username }}*
     owner: root
     group: root

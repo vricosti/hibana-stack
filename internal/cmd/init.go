@@ -154,7 +154,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if err := ansible.BuildAPIAndFrontend(workspaceDir); err != nil {
 		fmt.Printf("Warning: Failed to build API/frontend: %v\n", err)
 		fmt.Println("   API will use placeholder. You can build manually later with:")
-		fmt.Println("   ./build-all.sh && docker-compose -f /srv/<domain>/api/docker-compose.yml up -d --build")
+		fmt.Println("   ./build-all.sh && docker compose -f /srv/<domain>/api/docker-compose.yml up -d --build")
 	} else {
 		fmt.Println("API and frontend built successfully")
 	}

@@ -385,7 +385,7 @@ EXPOSE 80
 
 // startDockerCompose starts the Docker containers
 func (i *Installer) startDockerCompose(dir string) error {
-	cmd := exec.Command("docker-compose", "up", "-d", "--build")
+	cmd := exec.Command("docker", "compose", "up", "-d", "--build")
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

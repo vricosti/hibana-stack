@@ -119,6 +119,14 @@
         - '_default/nginx'
         - 'logs'
 
+    - name: Create www current symlink
+      file:
+        src: _default
+        dest: "{{ domain_path }}/www/current"
+        state: link
+        owner: "{{ domain_username }}"
+        group: hibana-domains
+
     - name: Copy www Dockerfile
       copy:
         src: www-Dockerfile

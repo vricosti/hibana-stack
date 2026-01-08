@@ -77,7 +77,7 @@
       - fail2ban
       - python3-systemd
       - docker.io
-      - docker-compose
+      - docker-compose-v2
       - postgresql
       - postgresql-contrib
       - python3-psycopg2

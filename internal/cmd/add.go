@@ -185,11 +185,11 @@ func runAddDomain(cmd *cobra.Command, args []string) error {
 %s ALL=(ALL) NOPASSWD: /usr/bin/docker stop *%s*
 %s ALL=(ALL) NOPASSWD: /usr/bin/docker start *%s*
 %s ALL=(ALL) NOPASSWD: /usr/bin/docker exec -it *%s* *
-%s ALL=(ALL) NOPASSWD: /usr/bin/docker-compose -f /srv/%s/* up -d
-%s ALL=(ALL) NOPASSWD: /usr/bin/docker-compose -f /srv/%s/* down
-%s ALL=(ALL) NOPASSWD: /usr/bin/docker-compose -f /srv/%s/* restart
-%s ALL=(ALL) NOPASSWD: /usr/bin/docker-compose -f /srv/%s/* logs
-%s ALL=(ALL) NOPASSWD: /usr/bin/docker-compose -f /srv/%s/* ps
+%s ALL=(ALL) NOPASSWD: /usr/bin/docker compose -f /srv/%s/* up -d
+%s ALL=(ALL) NOPASSWD: /usr/bin/docker compose -f /srv/%s/* down
+%s ALL=(ALL) NOPASSWD: /usr/bin/docker compose -f /srv/%s/* restart
+%s ALL=(ALL) NOPASSWD: /usr/bin/docker compose -f /srv/%s/* logs
+%s ALL=(ALL) NOPASSWD: /usr/bin/docker compose -f /srv/%s/* ps
 `,
 		domainName,
 		systemName, systemName, systemName, systemName,

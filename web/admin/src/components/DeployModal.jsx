@@ -201,7 +201,7 @@ export default function DeployModal({ service, onClose, onDeploy }) {
                 <li>Clear directory</li>
                 <li>{source === 'git' ? 'Clone repository' : 'Extract archive'}</li>
                 <li>Restore configuration files</li>
-                <li>Run docker-compose up -d --build</li>
+                <li>Run docker compose up -d --build</li>
               </ol>
             </div>
           </div>

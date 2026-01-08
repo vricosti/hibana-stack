@@ -27,7 +27,7 @@ for service in adm api webmail www; do
     if [ -d "$SRV_DIR/${service}.$DOMAIN" ]; then
         echo "  Stopping ${service}.$DOMAIN..."
         cd "$SRV_DIR/${service}.$DOMAIN"
-        docker-compose down || true
+        docker compose down || true
     fi
 done
 
@@ -97,7 +97,7 @@ ls -la "$SRV_DIR/" | grep "^l"
 echo ""
 echo "Next steps:"
 echo "1. Update Ansible configurations to use new paths"
-echo "2. Restart services with: cd /srv/$DOMAIN/<service> && docker-compose up -d"
+echo "2. Restart services with: cd /srv/$DOMAIN/<service> && docker compose up -d"
 echo "3. Verify all services are working"
 echo "4. Remove symbolic links once confirmed: rm /srv/{adm,api,webmail,www}.$DOMAIN"
 echo ""
