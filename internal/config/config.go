@@ -15,6 +15,10 @@ type Config struct {
 	Domains         []Domain           `yaml:"domains"`
 	DomainRedirects []DomainRedirect   `yaml:"domain_redirects,omitempty"`
 	SystemUsers     []SystemUser       `yaml:"system_users,omitempty"`
+
+	// Runtime fields (not persisted to YAML)
+	PrimaryMailServer  string `yaml:"-"` // Primary mail server hostname (e.g., mx.lotalogic.com)
+	ExistingMailDomain string `yaml:"-"` // Domain for which mail is already configured
 }
 
 // DNSProviderConfig represents DNS provider configuration

@@ -3,6 +3,7 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/vricosti/hibana-stack/internal/api/models"
 )
@@ -89,6 +90,16 @@ func (s *AliasService) GetAll() ([]models.EmailAliasWithDomain, error) {
 // Create creates a new email alias
 // Postfix reads aliases directly from the database, no file updates needed
 func (s *AliasService) Create(domainID int, create *models.EmailAliasCreate) (*models.EmailAlias, error) {
+	// Normalize: Postfix query concatenates source_address with '@' + domain,
+	// so source_address must be the local part only.
+	create.SourceAddress = strings.TrimSpace(strings.SplitN(create.SourceAddress, "@", 2)[0])
+	if create.SourceAddress == "" {
+		return nil, fmt.Errorf("source_address is required")
+	}
+	if strings.TrimSpace(create.DestinationAddresses) == "" {
+		return nil, fmt.Errorf("destination_addresses is required")
+	}
+
 	// Check if alias already exists
 	var exists int
 	err := s.db.QueryRow("SELECT COUNT(*) FROM email_aliases WHERE domain_id = $1 AND source_address = $2",

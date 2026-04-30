@@ -105,8 +105,9 @@ type NameserverProvider interface {
 
 // DomainConfig holds domain configuration for DNS operations
 type DomainConfig struct {
-	Name       string
-	Subdomains []SubdomainConfig
+	Name              string
+	Subdomains        []SubdomainConfig
+	PrimaryMailServer string // For secondary mail domains, the hostname of the primary mail server (e.g., mx.lotalogic.com)
 }
 
 // SubdomainConfig holds subdomain configuration

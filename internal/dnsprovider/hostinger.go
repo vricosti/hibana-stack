@@ -1567,10 +1567,15 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 			}
 
 			// Get mailserver subdomain name for this domain
-			mailserverSubdomain := "mx" // default fallback
+			mailserverSubdomain := "" // empty means no mailserver
+			isSecondaryMailDomain := false
 			for _, sub := range domainCfg.Subdomains {
 				if sub.Role == "mailserver" {
 					mailserverSubdomain = sub.Name
+					// Check if this is a secondary mail domain (subdomain starts with _)
+					if strings.HasPrefix(sub.Name, "_") {
+						isSecondaryMailDomain = true
+					}
 					break
 				}
 			}
@@ -1605,8 +1610,12 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 				})
 			}
 
-			// A records for subdomains
+			// A records for subdomains (skip virtual subdomains starting with _)
 			for _, sub := range domainCfg.Subdomains {
+				// Skip virtual subdomains (used for secondary mail domains)
+				if strings.HasPrefix(sub.Name, "_") {
+					continue
+				}
 				if skip, reason := shouldSkip(sub.Name, "A"); skip {
 					fmt.Printf("  ℹ %s.%s A: %s\n", sub.Name, domain, reason)
 				} else {
@@ -1619,9 +1628,17 @@ func UpdateDNSRecordsPreInstall(providerName, providerType, apiToken string, dom
 				}
 			}
 
-			// MX record if mailserver role exists (mailserverSubdomain already set above)
+			// MX record if mailserver role exists
 			if mailserverSubdomain != "" {
-				mxContent := fmt.Sprintf("10 %s.%s", mailserverSubdomain, domain)
+				var mxContent string
+				if isSecondaryMailDomain && domainCfg.PrimaryMailServer != "" {
+					// Secondary mail domain - point to primary mail server
+					mxContent = fmt.Sprintf("10 %s", domainCfg.PrimaryMailServer)
+					fmt.Printf("  ℹ Secondary mail domain - MX will point to %s\n", domainCfg.PrimaryMailServer)
+				} else {
+					// Primary mail domain - point to mx.domain.com
+					mxContent = fmt.Sprintf("10 %s.%s", mailserverSubdomain, domain)
+				}
 				if skip, reason := shouldSkip("@", "MX"); skip {
 					fmt.Printf("  ℹ %s MX: %s\n", domain, reason)
 				} else {
@@ -1800,8 +1817,11 @@ func VerifyDNSPropagation(domainCfg DomainConfig, serverIP string, maxRetries in
 	// Add root domain
 	fqdnsToCheck = append(fqdnsToCheck, domain)
 
-	// Add all subdomains
+	// Add all subdomains (skip virtual subdomains starting with _)
 	for _, sub := range domainCfg.Subdomains {
+		if strings.HasPrefix(sub.Name, "_") {
+			continue // Skip virtual subdomains (no DNS record)
+		}
 		fqdnsToCheck = append(fqdnsToCheck, fmt.Sprintf("%s.%s", sub.Name, domain))
 	}
 

@@ -21,12 +21,19 @@
 
     - role: mail_server
       tags: [mail, postfix, dovecot]
+      when: mail_server_enabled | default(true)
 
     - role: dkim
       tags: [mail, dkim, security]
+      when: "'mailserver' in (subdomains | default([]) | map(attribute='role') | list)"
+
+    - role: mail_domain
+      tags: [mail, domain]
+      when: "'mailserver' in (subdomains | default([]) | map(attribute='role') | list)"
 
     - role: spamassassin
       tags: [mail, spam]
+      when: mail_server_enabled | default(true)
 
     - role: fail2ban
       tags: [security, fail2ban]
@@ -55,13 +62,14 @@
           {% if 'webadmin' in enabled_roles %}  • Web admin:  https://adm.{{ primary_domain }}
           {% endif %}{% if 'webmail' in enabled_roles %}  • Webmail:    https://webmail.{{ primary_domain }}
           {% endif %}{% if 'website' in enabled_roles %}  • Website:    https://www.{{ primary_domain }}
-          {% endif %}{% if 'mailserver' in enabled_roles %}  • Mail:       {{ mailserver_subdomain }}.{{ primary_domain }}
+          {% endif %}{% if 'mailserver' in enabled_roles and not mailserver_subdomain.startswith('_') %}  • Mail:       {{ mailserver_subdomain }}.{{ primary_domain }}
+          {% elif 'mailserver' in enabled_roles %}  • Mail:       (uses existing mail server)
           {% endif %}
 
-    - name: Build PTR reminder if mailserver is enabled
+    - name: Build PTR reminder if mailserver is enabled (not for secondary mail domains)
       set_fact:
         ptr_reminder: |
-          {% if 'mailserver' in enabled_roles %}
+          {% if 'mailserver' in enabled_roles and not mailserver_subdomain.startswith('_') %}
           ⚠️  For email deliverability, ensure PTR records are configured:
               → IPv4 PTR: {{ mailserver_subdomain }}.{{ primary_domain }}
               → IPv6 PTR: {{ mailserver_subdomain }}.{{ primary_domain }}

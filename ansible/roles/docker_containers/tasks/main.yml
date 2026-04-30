@@ -87,15 +87,15 @@
     group: root
 
 - name: Stop Traefik service (cleanup)
-  docker_compose:
-    project_src: /srv/traefik
-    state: absent
+  shell: docker compose down --remove-orphans
+  args:
+    chdir: /srv/traefik
   ignore_errors: yes
 
 - name: Start Traefik service
-  docker_compose:
-    project_src: /srv/traefik
-    state: present
+  shell: docker compose up -d
+  args:
+    chdir: /srv/traefik
   register: traefik_result
 
 # ============================================================================
@@ -160,16 +160,15 @@
         mode: '0644'
 
     - name: Stop www service (cleanup)
-      docker_compose:
-        project_src: "{{ domain_path }}/www/_default"
-        state: absent
+      shell: docker compose down --remove-orphans
+      args:
+        chdir: "{{ domain_path }}/www/_default"
       ignore_errors: yes
 
     - name: Start www service
-      docker_compose:
-        project_src: "{{ domain_path }}/www/_default"
-        build: yes
-        state: present
+      shell: docker compose up -d --build
+      args:
+        chdir: "{{ domain_path }}/www/_default"
       register: www_result
 
 - name: Set www_result when skipped
@@ -220,15 +219,15 @@
         mode: '0644'
 
     - name: Stop webmail service (cleanup)
-      docker_compose:
-        project_src: "{{ domain_path }}/webmail"
-        state: absent
+      shell: docker compose down --remove-orphans
+      args:
+        chdir: "{{ domain_path }}/webmail"
       ignore_errors: yes
 
     - name: Start webmail service
-      docker_compose:
-        project_src: "{{ domain_path }}/webmail"
-        state: present
+      shell: docker compose up -d
+      args:
+        chdir: "{{ domain_path }}/webmail"
       register: webmail_result
 
 - name: Set webmail_result when skipped
@@ -367,22 +366,21 @@
     mode: '0600'
 
 - name: Stop legacy api service (cleanup)
-  docker_compose:
-    project_src: "{{ domain_path }}/api"
-    state: absent
+  shell: docker compose down --remove-orphans
+  args:
+    chdir: "{{ domain_path }}/api"
   ignore_errors: yes
 
 - name: Stop adm service (cleanup)
-  docker_compose:
-    project_src: "{{ domain_path }}/adm"
-    state: absent
+  shell: docker compose down --remove-orphans
+  args:
+    chdir: "{{ domain_path }}/adm"
   ignore_errors: yes
 
 - name: Start adm service
-  docker_compose:
-    project_src: "{{ domain_path }}/adm"
-    build: yes
-    state: present
+  shell: docker compose up -d --build
+  args:
+    chdir: "{{ domain_path }}/adm"
   register: adm_result
 
 # ============================================================================

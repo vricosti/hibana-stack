@@ -58,31 +58,62 @@ func InteractiveConfig() (*config.Config, error) {
 		fmt.Printf("\nServer IP detected: %s\n", serverIP)
 	}
 
+	// Check if a mail server is already configured on this server
+	mailAlreadyConfigured := system.IsMailServerConfigured()
+	var existingMailHostname string
+	if mailAlreadyConfigured {
+		existingMailDomain := system.GetConfiguredMailDomain()
+		existingMailHostname = system.GetMailServerHostname()
+		fmt.Printf("\n  Note: A mail server is already configured on this server (for %s).\n", existingMailDomain)
+		fmt.Printf("        This domain will be added as a virtual mail domain.\n")
+		fmt.Printf("        MX record will point to: %s\n", existingMailHostname)
+	}
+
+	// Build subdomains list
+	subdomains := []config.Subdomain{
+		{Name: "adm", Role: "webadmin"},
+		{Name: "www", Role: "website"},
+	}
+
+	// For primary mail domain: add mx subdomain
+	// For secondary mail domains: only add mailserver role (no mx subdomain, MX points to primary)
+	if mailAlreadyConfigured {
+		// Secondary mail domain - no mx subdomain needed, just the role for virtual domain config
+		subdomains = append(subdomains,
+			config.Subdomain{Name: "_virtual", Role: "mailserver"}, // marker for virtual mail domain
+			config.Subdomain{Name: "webmail", Role: "webmail"},
+		)
+	} else {
+		// Primary mail domain - needs mx subdomain
+		subdomains = append(subdomains,
+			config.Subdomain{Name: "mx", Role: "mailserver"},
+			config.Subdomain{Name: "webmail", Role: "webmail"},
+		)
+	}
+
+	// Build email accounts
+	emailAccounts := []config.EmailAccount{
+		{
+			Username: "contact",
+			Password: generateRandomPassword(16),
+			FullName: "Contact",
+		},
+	}
+
 	// Build configuration
 	cfg := &config.Config{
 		ServerIP:    serverIP,
 		DNSProvider: dnsProvider,
 		Domains: []config.Domain{
 			{
-				Name:      domainName,
-				IsPrimary: true,
-				Subdomains: []config.Subdomain{
-					{Name: "adm", Role: "webadmin"},
-					{Name: "mx", Role: "mailserver"},
-					{Name: "webmail", Role: "webmail"},
-					{Name: "www", Role: "website"},
-				},
+				Name:       domainName,
+				IsPrimary:  true,
+				Subdomains: subdomains,
 				WebAdmin: &config.WebAdminConfig{
 					Username: "admin",
 					Password: generateRandomPassword(16),
 				},
-				EmailAccounts: []config.EmailAccount{
-					{
-						Username: "contact",
-						Password: generateRandomPassword(16),
-						FullName: "Contact",
-					},
-				},
+				EmailAccounts: emailAccounts,
 				DomainUser: &config.DomainUserConfig{
 					Password:   generateRandomPassword(16),
 					SSHKeyMode: "auto",

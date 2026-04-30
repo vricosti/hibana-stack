@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/vricosti/hibana-stack/internal/config"
@@ -107,12 +108,16 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 		SystemUsers          []config.SystemUser
 		DomainRedirects      []config.DomainRedirect
 		MailserverSubdomain  string // Dynamic mailserver subdomain name (e.g., "mx", "mail", etc.)
+		MailServerEnabled    bool   // True if mail server should be configured (false for secondary mail domains)
 	}
 
 	// Extract mailserver subdomain name from primary domain
 	mailserverSubdomain := "mx" // default fallback
+	mailServerEnabled := false
 	if sub := primaryDomain.GetSubdomainByRole("mailserver"); sub != nil {
 		mailserverSubdomain = sub.Name
+		// Only enable mail server if it's not a virtual/secondary mail domain
+		mailServerEnabled = !strings.HasPrefix(sub.Name, "_")
 	}
 
 	data := TemplateData{
@@ -127,6 +132,7 @@ func GenerateGroupVars(cfg *config.Config, workspaceDir string) error {
 		SystemUsers:          cfg.SystemUsers,
 		DomainRedirects:      redirectsASCII,           // Use Punycode versions
 		MailserverSubdomain:  mailserverSubdomain,
+		MailServerEnabled:    mailServerEnabled,
 	}
 
 	// Template for group_vars/all.yml
@@ -165,6 +171,9 @@ primary_domain_display: "{{ .PrimaryDomainDisplay }}"
 
 # Mailserver subdomain name (dynamic - e.g., "mx", "mail", etc.)
 mailserver_subdomain: {{ .MailserverSubdomain }}
+
+# Whether to configure mail server (false for secondary mail domains that use existing mail server)
+mail_server_enabled: {{ .MailServerEnabled }}
 
 # Subdomains for primary domain (for backwards compatibility with Ansible roles)
 subdomains:

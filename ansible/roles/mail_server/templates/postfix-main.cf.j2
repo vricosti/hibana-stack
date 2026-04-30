@@ -28,7 +28,13 @@ inet_interfaces = all
 inet_protocols = all
 
 # Virtual domains and users
-virtual_mailbox_domains = {{ primary_domain }}
+{% set mail_domains = [] %}
+{% for domain in domains %}
+{% if domain.subdomains | selectattr('role', 'equalto', 'mailserver') | list | length > 0 %}
+{% set _ = mail_domains.append(domain.name) %}
+{% endif %}
+{% endfor %}
+virtual_mailbox_domains = {{ mail_domains | join(', ') }}
 virtual_mailbox_base = /var/mail/vhosts
 virtual_mailbox_maps = hash:/etc/postfix/vmailbox
 virtual_minimum_uid = 100

@@ -1,0 +1,39 @@
+---
+# Add email account to database
+- name: Get domain ID for {{ domain_account.0.name }}
+  postgresql_query:
+    db: hibana
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    query: "SELECT id FROM domains WHERE name = %s"
+    positional_args:
+      - "{{ domain_account.0.name }}"
+  register: domain_id_result
+
+- name: Generate password hash for {{ domain_account.1.username }}@{{ domain_account.0.name }}
+  command: "doveadm pw -s SHA512-CRYPT -p '{{ domain_account.1.password }}'"
+  register: password_hash_result
+  changed_when: false
+  no_log: true
+
+- name: Clean password hash
+  set_fact:
+    clean_password_hash: "{{ password_hash_result.stdout | regex_replace('^\\{SHA512-CRYPT\\}', '') }}"
+
+- name: Insert email account into database
+  postgresql_query:
+    db: hibana
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    query: |
+      INSERT INTO email_accounts (domain_id, username, password_hash, full_name)
+      VALUES (%s, %s, %s, %s)
+      ON CONFLICT (domain_id, username) DO UPDATE SET
+        password_hash = EXCLUDED.password_hash,
+        full_name = EXCLUDED.full_name
+    positional_args:
+      - "{{ domain_id_result.query_result[0].id }}"
+      - "{{ domain_account.1.username }}"
+      - "{{ clean_password_hash }}"
+      - "{{ domain_account.1.full_name | default(domain_account.1.username) }}"
+  when: domain_id_result.query_result | length > 0

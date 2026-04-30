@@ -303,3 +303,80 @@ nameserver 1.1.1.1
 
 	return nil
 }
+
+// IsMailServerConfigured checks if a mail server is already configured on this server
+// It checks for the presence of virtual_mailbox_domains in Postfix main.cf
+func IsMailServerConfigured() bool {
+	return GetConfiguredMailDomain() != ""
+}
+
+// GetConfiguredMailDomain returns the domain for which mail is configured, or empty string if none
+func GetConfiguredMailDomain() string {
+	// Check Postfix main.cf for virtual_mailbox_domains
+	data, err := os.ReadFile("/etc/postfix/main.cf")
+	if err != nil {
+		return ""
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "virtual_mailbox_domains") {
+			// Format: virtual_mailbox_domains = domain.com or virtual_mailbox_domains = pgsql:/path
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				value := strings.TrimSpace(parts[1])
+				// If it's a direct domain (not a pgsql: reference)
+				if !strings.HasPrefix(value, "pgsql:") && !strings.HasPrefix(value, "proxy:") {
+					// Could be multiple domains separated by comma or space
+					domains := strings.FieldsFunc(value, func(r rune) bool {
+						return r == ',' || r == ' '
+					})
+					if len(domains) > 0 {
+						return domains[0]
+					}
+				}
+				// If it's a pgsql reference, check the database
+				return getMailDomainFromDatabase()
+			}
+		}
+	}
+
+	return ""
+}
+
+// getMailDomainFromDatabase queries the hibana database for configured mail domains
+func getMailDomainFromDatabase() string {
+	// Try to read from hibana database
+	cmd := exec.Command("sudo", "-u", "postgres", "psql", "-d", "hibana", "-t", "-c",
+		"SELECT d.name FROM domains d JOIN subdomains s ON d.id = s.domain_id WHERE s.role = 'mailserver' LIMIT 1;")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	domain := strings.TrimSpace(string(output))
+	return domain
+}
+
+// GetMailServerHostname returns the mail server hostname (e.g., mx.lotalogic.com)
+// It reads the myhostname from Postfix main.cf
+func GetMailServerHostname() string {
+	data, err := os.ReadFile("/etc/postfix/main.cf")
+	if err != nil {
+		return ""
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "myhostname") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+
+	return ""
+}

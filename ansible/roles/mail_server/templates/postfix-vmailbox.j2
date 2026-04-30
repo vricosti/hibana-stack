@@ -1,5 +1,7 @@
 {% for domain in domains %}
+{% if domain.subdomains | selectattr('role', 'equalto', 'mailserver') | list | length > 0 %}
 {% for account in domain.email_accounts %}
 {{ account.username }}@{{ domain.name }} {{ domain.name }}/{{ account.username }}/
 {% endfor %}
+{% endif %}
 {% endfor %}

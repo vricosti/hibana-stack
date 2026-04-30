@@ -4,7 +4,7 @@ import { aliasAPI } from '../services/api';
 export default function AliasModal({ alias, domainId, domainName, onClose }) {
   const [formData, setFormData] = useState({
     source_address: alias?.source_address || '',
-    destination: alias?.destination || ''
+    destination_addresses: alias?.destination_addresses || ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -18,13 +18,13 @@ export default function AliasModal({ alias, domainId, domainName, onClose }) {
       if (alias) {
         // Update
         await aliasAPI.update(alias.id, {
-          destination: formData.destination
+          destination_addresses: formData.destination_addresses
         });
       } else {
         // Create
         await aliasAPI.create(domainId, {
-          source_address: formData.source_address,
-          destination: formData.destination
+          source_address: formData.source_address.split('@')[0].trim(),
+          destination_addresses: formData.destination_addresses
         });
       }
       onClose(true);
@@ -80,8 +80,8 @@ export default function AliasModal({ alias, domainId, domainName, onClose }) {
               <input
                 type="email"
                 className="form-control"
-                value={formData.destination}
-                onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
+                value={formData.destination_addresses}
+                onChange={(e) => setFormData({ ...formData, destination_addresses: e.target.value })}
                 required
                 placeholder="user@example.com"
               />

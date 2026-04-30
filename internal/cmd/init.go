@@ -68,6 +68,34 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
+
+		// Check if mail server is already configured - if so, new domains will be added as virtual domains
+		if system.IsMailServerConfigured() {
+			existingMailDomain := system.GetConfiguredMailDomain()
+			primaryMailServer := system.GetMailServerHostname()
+
+			// Count new mailserver domains
+			var newMailDomains []string
+			for _, domain := range cfg.Domains {
+				if domain.HasSubdomainRole("mailserver") && domain.Name != existingMailDomain {
+					newMailDomains = append(newMailDomains, domain.Name)
+				}
+			}
+
+			if len(newMailDomains) > 0 {
+				fmt.Printf("\nInfo: Mail server already configured for %s.\n", existingMailDomain)
+				fmt.Printf("      Primary mail server: %s\n", primaryMailServer)
+				fmt.Println("      The following domains will be added as virtual mail domains:")
+				for _, d := range newMailDomains {
+					fmt.Printf("        - %s (MX → %s)\n", d, primaryMailServer)
+				}
+				fmt.Println()
+			}
+
+			// Store primary mail server for DNS configuration
+			cfg.PrimaryMailServer = primaryMailServer
+			cfg.ExistingMailDomain = existingMailDomain
+		}
 	}
 
 	primaryDomain := cfg.GetPrimaryDomain()
@@ -184,6 +212,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 					Role: sub.Role,
 				}
 			}
+			// For secondary mail domains, set the primary mail server
+			if cfg.PrimaryMailServer != "" && domain.Name != cfg.ExistingMailDomain {
+				domainCfg.PrimaryMailServer = cfg.PrimaryMailServer
+			}
 
 			// Use OVH-specific function if provider is OVH
 			if cfg.DNSProvider.Name == "ovh" || cfg.DNSProvider.Name == "ovhcloud" {
@@ -267,6 +299,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 					Role: sub.Role,
 				}
 			}
+			// For secondary mail domains, set the primary mail server
+			if cfg.PrimaryMailServer != "" && domain.Name != cfg.ExistingMailDomain {
+				domainCfg.PrimaryMailServer = cfg.PrimaryMailServer
+			}
 
 			// Use OVH-specific function if provider is OVH
 			if cfg.DNSProvider.Name == "ovh" || cfg.DNSProvider.Name == "ovhcloud" {
@@ -287,8 +323,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 
 		// Configure PTR records if mailserver role is enabled on primary domain
-		if primaryDomain.HasSubdomainRole("mailserver") {
-			mailHostname := fmt.Sprintf("%s.%s", cfg.GetMailserverSubdomain(), primaryDomain.Name)
+		// Skip for secondary mail domains (mailserver subdomain starts with _)
+		mailserverSub := cfg.GetMailserverSubdomain()
+		if primaryDomain.HasSubdomainRole("mailserver") && !strings.HasPrefix(mailserverSub, "_") {
+			mailHostname := fmt.Sprintf("%s.%s", mailserverSub, primaryDomain.Name)
 			serverIPv6, _ := system.GetServerIPv6()
 
 			if cfg.DNSProvider.Name == "ovh" || cfg.DNSProvider.Name == "ovhcloud" {
@@ -336,8 +374,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 				}
 			}
 		}
-	} else if primaryDomain.HasSubdomainRole("mailserver") {
+	} else if primaryDomain.HasSubdomainRole("mailserver") && !strings.HasPrefix(cfg.GetMailserverSubdomain(), "_") {
 		// No DNS provider configured but mailserver is enabled - show manual PTR instructions
+		// Skip for secondary mail domains (mailserver subdomain starts with _)
 		mailserverSubdomain := cfg.GetMailserverSubdomain()
 		fmt.Println("\nPTR records must be configured manually for email deliverability:")
 		fmt.Printf("    Set PTR for IPv4 to: %s.%s\n", mailserverSubdomain, primaryDomain.Name)
@@ -366,7 +405,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  - Website:    https://www.%s\n", primaryDomain.Name)
 	}
 	if enabledRoles["mailserver"] {
-		fmt.Printf("  - Mail:       %s.%s\n", cfg.GetMailserverSubdomain(), primaryDomain.Name)
+		mailSub := cfg.GetMailserverSubdomain()
+		if strings.HasPrefix(mailSub, "_") {
+			// Secondary mail domain - uses existing mail server
+			fmt.Printf("  - Mail:       (uses existing mail server)\n")
+		} else {
+			fmt.Printf("  - Mail:       %s.%s\n", mailSub, primaryDomain.Name)
+		}
 	}
 
 	// Show secondary domains

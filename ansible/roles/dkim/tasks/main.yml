@@ -1,28 +1,53 @@
 ---
-- name: Create OpenDKIM keys directory for all domains
+# Discover existing DKIM domains to preserve them when adding new domains
+- name: Find existing DKIM key directories
+  find:
+    paths: /etc/opendkim/keys
+    file_type: directory
+  register: existing_dkim_dirs
+
+- name: Build list of existing mail domains from DKIM keys
+  set_fact:
+    existing_mail_domains: "{{ existing_dkim_dirs.files | map(attribute='path') | map('basename') | list }}"
+
+- name: Build list of new mail domains from config
+  set_fact:
+    new_mail_domains: "{{ domains | selectattr('subdomains', 'defined') | selectattr('subdomains', 'contains', {'role': 'mailserver'}) | map(attribute='name') | list }}"
+
+- name: Combine existing and new mail domains (for DKIM config)
+  set_fact:
+    all_mail_domains: "{{ (existing_mail_domains + new_mail_domains) | unique }}"
+
+- name: Debug all mail domains
+  debug:
+    msg: "All mail domains for DKIM: {{ all_mail_domains }}"
+
+- name: Create OpenDKIM keys directory for mail domains
   file:
     path: /etc/opendkim/keys/{{ item.name }}
     state: directory
     owner: opendkim
     group: opendkim
     mode: '0750'
-  loop: "{{ domains }}"
+  loop: "{{ domains | selectattr('subdomains', 'defined') | list }}"
+  when: item.subdomains | selectattr('role', 'equalto', 'mailserver') | list | length > 0
 
-- name: Check if DKIM private key exists for each domain
+- name: Check if DKIM private key exists for each mail domain
   stat:
     path: /etc/opendkim/keys/{{ item.name }}/default.private
   register: dkim_private_keys
-  loop: "{{ domains }}"
+  loop: "{{ domains | selectattr('subdomains', 'defined') | list }}"
+  when: item.subdomains | selectattr('role', 'equalto', 'mailserver') | list | length > 0
 
-- name: Generate DKIM keys for domains without keys
+- name: Generate DKIM keys for mail domains without keys
   command: >
     opendkim-genkey
     -b 2048
     -d {{ item.item.name }}
     -s default
     -D /etc/opendkim/keys/{{ item.item.name }}
-  when: not item.stat.exists
-  loop: "{{ dkim_private_keys.results }}"
+  when: item.stat is defined and not item.stat.exists
+  loop: "{{ dkim_private_keys.results | default([]) }}"
 
 - name: Set proper permissions on DKIM keys
   file:
@@ -120,8 +145,9 @@
   set_fact:
     hibana_db_password: "{{ hibana_password_file['content'] | b64decode | trim }}"
 
-- name: Read and store DKIM keys for all domains
+- name: Read and store DKIM keys for mail domains
   include_tasks: store_dkim_key.yml
-  loop: "{{ domains }}"
+  loop: "{{ domains | selectattr('subdomains', 'defined') | list }}"
   loop_control:
     loop_var: domain
+  when: domain.subdomains | selectattr('role', 'equalto', 'mailserver') | list | length > 0

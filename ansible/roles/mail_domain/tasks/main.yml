@@ -1,0 +1,109 @@
+---
+# mail_domain role - Configures mail domains in Postfix and database
+# This role handles adding domains to an existing mail server setup
+# It discovers existing mail domains and merges with new ones
+
+# Discover existing mail domains from Postfix config
+- name: Get current Postfix virtual_mailbox_domains
+  command: postconf -h virtual_mailbox_domains
+  register: current_vmd
+  changed_when: false
+
+- name: Parse existing mail domains from Postfix
+  set_fact:
+    existing_postfix_domains: "{{ current_vmd.stdout | regex_replace(' ', '') | split(',') | select('ne', '') | list }}"
+
+- name: Build list of new mail domains from config
+  set_fact:
+    new_mail_domains: "{{ domains | selectattr('subdomains', 'defined') | selectattr('subdomains', 'contains', {'role': 'mailserver'}) | map(attribute='name') | list }}"
+
+- name: Combine all mail domains for Postfix
+  set_fact:
+    all_postfix_domains: "{{ (existing_postfix_domains + new_mail_domains) | unique }}"
+
+- name: Debug mail domains
+  debug:
+    msg: "Mail domains - Existing: {{ existing_postfix_domains }}, New: {{ new_mail_domains }}, Combined: {{ all_postfix_domains }}"
+
+# Update Postfix virtual_mailbox_domains
+- name: Update Postfix virtual_mailbox_domains
+  command: "postconf -e 'virtual_mailbox_domains = {{ all_postfix_domains | join(', ') }}'"
+  when: all_postfix_domains | length > 0
+  notify: Reload Postfix
+
+# Create maildir for each domain
+- name: Create vmail directory for each mail domain
+  file:
+    path: "/var/mail/vhosts/{{ item }}"
+    state: directory
+    owner: vmail
+    group: vmail
+    mode: '0750'
+  loop: "{{ all_postfix_domains }}"
+
+# Update vmailbox file for email accounts
+- name: Get existing vmailbox entries
+  command: cat /etc/postfix/vmailbox
+  register: existing_vmailbox
+  changed_when: false
+  failed_when: false
+
+- name: Build vmailbox entries for new domains
+  set_fact:
+    vmailbox_entries: |
+      {% for domain in domains %}
+      {% if domain.subdomains | selectattr('role', 'equalto', 'mailserver') | list | length > 0 %}
+      {% for account in domain.email_accounts | default([]) %}
+      {{ account.username }}@{{ domain.name }} {{ domain.name }}/{{ account.username }}/
+      {% endfor %}
+      {% endif %}
+      {% endfor %}
+
+- name: Update vmailbox file
+  template:
+    src: vmailbox.j2
+    dest: /etc/postfix/vmailbox
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Postmap vmailbox
+
+# Create maildir for each email account
+- name: Create maildir for email accounts
+  file:
+    path: "/var/mail/vhosts/{{ item.0.name }}/{{ item.1.username }}"
+    state: directory
+    owner: vmail
+    group: vmail
+    mode: '0750'
+  loop: "{{ domains | selectattr('subdomains', 'defined') | selectattr('subdomains', 'contains', {'role': 'mailserver'}) | subelements('email_accounts', skip_missing=True) }}"
+
+# Database operations - Add domains and email accounts
+- name: Read hibana database password
+  slurp:
+    src: /etc/hibana/passwords/hibana
+  register: hibana_password_file
+
+- name: Set hibana password fact
+  set_fact:
+    hibana_db_password: "{{ hibana_password_file['content'] | b64decode | trim }}"
+
+- name: Add domain to database if not exists
+  postgresql_query:
+    db: hibana
+    login_user: hibana
+    login_password: "{{ hibana_db_password }}"
+    query: |
+      INSERT INTO domains (name, server_ip)
+      VALUES (%s, %s)
+      ON CONFLICT (name) DO NOTHING
+    positional_args:
+      - "{{ item.name }}"
+      - "{{ server_ip }}"
+  loop: "{{ domains | selectattr('subdomains', 'defined') | selectattr('subdomains', 'contains', {'role': 'mailserver'}) | list }}"
+
+- name: Add email accounts to database
+  include_tasks: add_email_account.yml
+  loop: "{{ domains | selectattr('subdomains', 'defined') | selectattr('subdomains', 'contains', {'role': 'mailserver'}) | subelements('email_accounts', skip_missing=True) }}"
+  loop_control:
+    loop_var: domain_account

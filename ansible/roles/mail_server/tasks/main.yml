@@ -80,14 +80,15 @@
     create_home: no
     state: present
 
-- name: Create mail directory structure for all domains
+- name: Create mail directory structure for mail domains
   file:
     path: /var/mail/vhosts/{{ item.name }}
     state: directory
     owner: vmail
     group: vmail
     mode: '0770'
-  loop: "{{ domains }}"
+  loop: "{{ domains | selectattr('subdomains', 'defined') | list }}"
+  when: item.subdomains | selectattr('role', 'equalto', 'mailserver') | list | length > 0
 
 - name: Configure Postfix main.cf
   template:

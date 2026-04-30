@@ -1,0 +1,8 @@
+---
+- name: Reload Postfix
+  service:
+    name: postfix
+    state: reloaded
+
+- name: Postmap vmailbox
+  command: postmap /etc/postfix/vmailbox

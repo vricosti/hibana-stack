@@ -116,7 +116,7 @@ export default function Emails() {
   // Combine emails and aliases into a unified list
   const combinedList = [
     ...emails.map(e => ({ ...e, type: 'account', redirect: null })),
-    ...aliases.map(a => ({ ...a, type: 'redirect', username: a.source_address, redirect: a.destination }))
+    ...aliases.map(a => ({ ...a, type: 'redirect', username: a.source_address, redirect: a.destination_addresses }))
   ];
 
   return (
